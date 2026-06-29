@@ -1,0 +1,14 @@
+# ── R-GCN encoder config (native heterogeneous) ──────────
+encoder:
+  name: "RGCN"
+  conv: "RGCNConv"
+  hidden_channels: 128
+  num_layers: 2
+  num_bases: 4                         # basis decomposition
+  dropout: 0.3
+  heterogeneous: true
+
+decoder:
+  name: "distmult"
+
+variational: false

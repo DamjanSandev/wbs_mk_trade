@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(touch:*)",
+      "Bash(pip list:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "WebSearch",
+      "WebFetch(domain:atlas.hks.harvard.edu)",
+      "WebFetch(domain:dataverse.harvard.edu)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}

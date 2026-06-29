@@ -1,0 +1,14 @@
+# ── VGAE (Variational Graph Auto-Encoder) config ─────────
+encoder:
+  name: "GraphSAGE"
+  conv: "SAGEConv"
+  hidden_channels: 128
+  num_layers: 2
+  dropout: 0.3
+  heterogeneous: true
+
+decoder:
+  name: "dot_product"
+
+variational: true                      # enables KL-divergence loss
+kl_weight: 0.001

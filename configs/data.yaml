@@ -1,0 +1,44 @@
+# ── Data acquisition & cleaning configuration ─────────────
+atlas:
+  # Harvard Growth Lab Atlas — country × product × year export data
+  # Download URL pattern (HS 4-digit, rev 92)
+  base_url: "https://intl-atlas-downloads.s3.amazonaws.com"
+  file: "hs4_export.csv.gz"          # ~180 MB compressed
+  hs_level: 4                         # HS 2 / 4 / 6
+  year_range: [2000, 2022]
+
+comtrade:
+  # UN Comtrade bilateral trade flows via comtradeapicall
+  hs_level: 4
+  year_range: [2015, 2022]
+  # Focus countries: Western Balkans + top MKD partners
+  reporters: ["807"]                   # M49: North Macedonia
+  partners: "all"                      # fetch all partners; filter later
+  max_records_per_call: 100000
+  rate_limit_calls_per_day: 500
+  flow_codes: ["X", "M"]              # exports, imports
+
+gravity:
+  # CEPII Gravity dataset
+  url: "http://www.cepii.fr/DATA_DOWNLOAD/gravity/data/Gravity_csv_V202211.zip"
+  year_range: [2000, 2020]
+
+wdi:
+  # World Bank WDI indicators
+  indicators:
+    gdp: "NY.GDP.MKTP.CD"
+    gdp_pc: "NY.GDP.PCAP.CD"
+    population: "SP.POP.TOTL"
+  year_range: [2000, 2022]
+
+# ── Country sets ──────────────────────────────────────────
+focus_country: "MKD"
+cefta_members: ["ALB", "BIH", "MKD", "MDA", "MNE", "SRB", "XKX"]
+western_balkans: ["ALB", "BIH", "MKD", "MNE", "SRB", "XKX"]
+
+# ── Paths (relative to project root) ─────────────────────
+paths:
+  raw: "data/raw"
+  interim: "data/interim"
+  processed: "data/processed"
+  external: "data/external"

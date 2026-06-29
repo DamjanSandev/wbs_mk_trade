@@ -1,0 +1,13 @@
+# ── GCN encoder config ────────────────────────────────────
+encoder:
+  name: "GCN"
+  conv: "GCNConv"
+  hidden_channels: 128
+  num_layers: 2
+  dropout: 0.3
+  heterogeneous: true
+
+decoder:
+  name: "dot_product"
+
+variational: false
