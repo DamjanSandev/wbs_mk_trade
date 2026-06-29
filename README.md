@@ -90,9 +90,9 @@ Headline experiment: **temporal holdout** — do top-ranked predictions appear i
 | Phase | Description | Status |
 |-------|-------------|--------|
 | 0 | Scaffold repo, configs, stubs | Done |
-| 1 | Data acquisition & cleaning (Atlas, Comtrade, CEPII, WDI) | Pending |
-| 2 | Economic complexity (ecomplexity pipeline) | Pending |
-| 3 | Knowledge graph (Neo4j + NetworkX + PyG HeteroData) | Pending |
+| 1 | Data acquisition & cleaning (Atlas, Comtrade, CEPII, WDI) | Done |
+| 2 | Economic complexity (ecomplexity pipeline) | Done |
+| 3 | Knowledge graph (Neo4j + NetworkX + PyG HeteroData) | Done |
 | 4 | GNN training, baselines, evaluation, ablations | Pending |
 | 5 | Opportunity report, explanations, Streamlit dashboard | Pending |
 

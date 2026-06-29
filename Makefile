@@ -35,7 +35,7 @@ complexity:  ## Phase 2 — compute economic complexity
 	$(PYTHON) scripts/02_compute_complexity.py
 
 graph:  ## Phase 3 — build knowledge graph
-	$(PYTHON) scripts/03_build_graph.py
+	$(PYTHON) scripts/02_build_graph.py --skip-neo4j
 
 train:  ## Phase 4 — train GNN models
 	$(PYTHON) scripts/04_train_models.py
