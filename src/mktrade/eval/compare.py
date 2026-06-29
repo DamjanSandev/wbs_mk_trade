@@ -1,12 +1,12 @@
 """Compare GNN models against all baselines and produce benchmark tables.
 
-Baselines: complexity density, COG, PPML gravity, Adamic-Adar/Jaccard/CN,
-Neo4j GDS link-prediction pipeline.
+Baselines: complexity density, COG, Adamic-Adar/Jaccard/CN.
 """
 
 from __future__ import annotations
 
 import pandas as pd
+from loguru import logger
 
 
 def compare_models(results: dict[str, dict[str, float]]) -> pd.DataFrame:
@@ -15,9 +15,23 @@ def compare_models(results: dict[str, dict[str, float]]) -> pd.DataFrame:
     Returns a DataFrame with models as rows and metrics as columns,
     sorted by Average Precision descending.
     """
-    raise NotImplementedError
+    df = pd.DataFrame.from_dict(results, orient="index")
+    if "avg_precision" in df.columns:
+        df = df.sort_values("avg_precision", ascending=False)
+    df.index.name = "model"
+
+    logger.info(f"\nModel comparison ({len(df)} models):")
+    # Print top metrics
+    display_cols = [c for c in ["roc_auc", "avg_precision", "mrr", "hits@10", "hits@50",
+                                "precision@50", "recall@50"] if c in df.columns]
+    if display_cols:
+        logger.info(f"\n{df[display_cols].to_string(float_format='%.4f')}")
+
+    return df
 
 
 def ablation_table(results: dict[str, dict[str, float]]) -> pd.DataFrame:
-    """Build ablation study table (homo vs hetero, +/- gravity, etc.)."""
-    raise NotImplementedError
+    """Build ablation study table."""
+    df = pd.DataFrame.from_dict(results, orient="index")
+    df.index.name = "variant"
+    return df
