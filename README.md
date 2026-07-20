@@ -94,7 +94,7 @@ Headline experiment: **temporal holdout** — do top-ranked predictions appear i
 | 2 | Economic complexity (ecomplexity pipeline) | Done |
 | 3 | Knowledge graph (Neo4j + NetworkX + PyG HeteroData) | Done |
 | 4 | GNN training, baselines, evaluation, ablations | Done |
-| 5 | Opportunity report, explanations, Streamlit dashboard | Pending |
+| 5 | Opportunity report, explanations, Streamlit dashboard | Done |
 
 ## Requirements
 

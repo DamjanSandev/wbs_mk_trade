@@ -134,6 +134,7 @@ def build_hetero_data(
     proximity_df: pd.DataFrame | None = None,
     year: int | None = None,
     cefta_members: set[str] | None = None,
+    proximity_top_k: int | None = None,
 ) -> HeteroData:
     """Assemble a PyG HeteroData object from processed DataFrames.
 
@@ -147,6 +148,8 @@ def build_hetero_data(
     proximity_df : columns [year, hs4_1, hs4_2, proximity].
     year : snapshot year (filters all DataFrames).
     cefta_members : set of ISO3 codes for CEFTA membership feature.
+    proximity_top_k : if set, keep only top-K nearest products per product
+        by proximity score (limits memory for attention-heavy models like HGT).
 
     Returns
     -------
@@ -285,13 +288,33 @@ def build_hetero_data(
     # ── PROXIMITY edges (product ↔ product) — vectorized ──
     if proximity_df is not None and not proximity_df.empty:
         prox = proximity_df.copy()
-        if year is not None and "year" in prox.columns:
-            prox = prox[prox["year"] == year]
+        if "year" in prox.columns:
+            if year is not None and year in prox["year"].values:
+                prox = prox[prox["year"] == year]
+            else:
+                # Proximity is a structural property that changes slowly;
+                # fall back to the latest available year (same logic as gravity)
+                latest = prox["year"].max()
+                prox = prox[prox["year"] == latest]
+                if year is not None:
+                    logger.info(f"  Proximity: year {year} unavailable, using {latest}")
         prox = prox[(prox["proximity"] > 0) & (prox["hs4_1"] != prox["hs4_2"])]
 
         prox["i"] = prox["hs4_1"].map(product2idx)
         prox["j"] = prox["hs4_2"].map(product2idx)
         prox = prox.dropna(subset=["i", "j"])
+
+        # Optionally sparsify: keep top-K nearest neighbors per product
+        # (full matrix can be 1.45M+ edges, causing OOM for attention-based models)
+        if proximity_top_k is not None and not prox.empty and len(prox) > proximity_top_k * n_products:
+            before = len(prox)
+            prox = (
+                prox.sort_values("proximity", ascending=False)
+                .groupby("i", sort=False)
+                .head(proximity_top_k)
+            )
+            logger.info(f"  Proximity sparsified: {before} -> {len(prox)} "
+                        f"(top-{proximity_top_k} per product)")
 
         if not prox.empty:
             p_src = torch.tensor(prox["i"].astype(int).values, dtype=torch.long)

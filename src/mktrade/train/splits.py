@@ -37,6 +37,7 @@ def _build_snapshot_data(
     wdi_df: pd.DataFrame | None,
     years: list[int] | int,
     cefta_members: set[str] | None = None,
+    proximity_top_k: int | None = None,
 ) -> HeteroData:
     """Build a PyG HeteroData for a set of years (union of edges)."""
     from mktrade.graph.pyg_data import build_hetero_data, enrich_country_features
@@ -59,6 +60,7 @@ def _build_snapshot_data(
         proximity_df=proximity_df,
         year=latest,
         cefta_members=cefta_members,
+        proximity_top_k=proximity_top_k,
     )
 
     if wdi_df is not None:
@@ -78,6 +80,7 @@ def temporal_split(
     wdi_df: pd.DataFrame | None = None,
     cefta_members: set[str] | None = None,
     neg_ratio: int = 1,
+    proximity_top_k: int | None = None,
 ) -> tuple[HeteroData, HeteroData, HeteroData]:
     """Temporal link-split for Task A (product diversification).
 
@@ -101,6 +104,7 @@ def temporal_split(
         exports_df, country_features, product_features,
         proximity_df, gravity_df, bilateral_df, wdi_df,
         years=train_years, cefta_members=cefta_members,
+        proximity_top_k=proximity_top_k,
     )
 
     # Get ID mappings from the training graph

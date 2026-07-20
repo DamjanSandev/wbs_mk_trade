@@ -66,12 +66,14 @@ def fit_ppml_gravity(
     merged = merged.dropna(subset=feature_cols + ["value"])
 
     X = merged[feature_cols].astype(float)
-    X = sm.add_constant(X)
+    X = sm.add_constant(X, has_constant="add")
     y = merged["value"].astype(float)
 
     # Fit PPML (Poisson with log link)
     model = sm.GLM(y, X, family=sm.families.Poisson(link=sm.families.links.Log()))
     result = model.fit(maxiter=100)
+    # Store feature columns for consistent prediction
+    result._gravity_feature_cols = list(X.columns)
 
     logger.info(f"PPML gravity fit: {len(merged)} observations, pseudo-R²={result.pseudo_rsquared():.4f}")
     logger.info(f"  Coefficients: {dict(zip(X.columns, result.params.round(4)))}")
@@ -117,7 +119,10 @@ def predict_gravity(
     grav = grav.dropna(subset=feature_cols)
 
     X = grav[feature_cols].astype(float)
-    X = sm.add_constant(X)
+    X = sm.add_constant(X, has_constant="add")
+    # Ensure columns match what the model was trained on
+    if hasattr(model, "_gravity_feature_cols"):
+        X = X.reindex(columns=model._gravity_feature_cols, fill_value=0)
 
     grav["predicted_value"] = model.predict(X)
 
