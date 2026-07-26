@@ -7,6 +7,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
+from mktrade.viz.i18n import t
+
 
 # HS section code -> broad name (for labelling)
 _SECTION_NAMES = {
@@ -48,30 +50,43 @@ def _section_label(code: str) -> str:
 def opportunity_bar_chart(
     opportunities: pd.DataFrame,
     top_k: int = 20,
-    title: str = "Top Predicted Product Opportunities for MKD",
+    title: str | None = None,
+    lang: str = "en",
 ) -> go.Figure:
     """Horizontal bar chart of top-K opportunity scores, coloured by section."""
+    from mktrade.viz.hs_names import hs4_display
+
+    if title is None:
+        title = t("chart_top_opportunities", lang)
+
     df = opportunities.head(top_k).copy()
     df["section_name"] = df["section"].apply(_section_label)
-    df["label"] = df["hs4"] + " (" + df["section_name"] + ")"
-    df = df.sort_values("score", ascending=True)  # ascending for horizontal bar
+    if "product" in df.columns:
+        df["label"] = df["product"]
+    else:
+        df["label"] = df["hs4"].apply(lambda x: hs4_display(x, lang))
+    df = df.sort_values("score", ascending=True)
 
     fig = px.bar(
         df, x="score", y="label", orientation="h",
         color="section_name",
         title=title,
-        labels={"score": "GNN Link Score", "label": "Product (HS4)", "section_name": "Section"},
+        labels={
+            "score": t("chart_gnn_link_score", lang),
+            "label": t("chart_product", lang),
+            "section_name": t("chart_chapter", lang),
+        },
     )
     fig.update_layout(
-        height=max(400, top_k * 25),
+        height=max(400, top_k * 28),
         yaxis_title="",
         showlegend=True,
-        legend_title="HS Section",
+        legend_title=t("chart_hs_chapter", lang),
     )
     return fig
 
 
-def model_comparison_heatmap(comparison_df: pd.DataFrame) -> go.Figure:
+def model_comparison_heatmap(comparison_df: pd.DataFrame, lang: str = "en") -> go.Figure:
     """Heatmap of models (rows) x metrics (columns)."""
     display_cols = [c for c in ["roc_auc", "avg_precision", "mrr",
                                 "precision@50", "recall@50", "hits@50"]
@@ -82,22 +97,22 @@ def model_comparison_heatmap(comparison_df: pd.DataFrame) -> go.Figure:
     fig = go.Figure(data=go.Heatmap(
         z=df.values,
         x=[c.replace("_", " ").title() for c in df.columns],
-        y=df.index.tolist(),
-        colorscale="RdYlGn",
+        y=[m.upper() for m in df.index.tolist()],
+        colorscale=[[0, "#fee2e2"], [0.5, "#fef3c7"], [1, "#d1fae5"]],
         text=[[f"{v:.4f}" for v in row] for row in df.values],
         texttemplate="%{text}",
-        textfont={"size": 12},
+        textfont={"size": 13, "color": "#0f172a"},
     ))
     fig.update_layout(
-        title="Model Comparison",
+        title=t("chart_model_comparison", lang),
         height=max(300, len(df) * 60 + 100),
-        xaxis_title="Metric",
-        yaxis_title="Model",
+        xaxis_title=t("chart_metric", lang),
+        yaxis_title=t("chart_model", lang),
     )
     return fig
 
 
-def model_comparison_bars(comparison_df: pd.DataFrame) -> go.Figure:
+def model_comparison_bars(comparison_df: pd.DataFrame, lang: str = "en") -> go.Figure:
     """Grouped bar chart comparing models on key metrics."""
     metrics = ["roc_auc", "avg_precision"]
     available = [m for m in metrics if m in comparison_df.columns]
@@ -113,8 +128,13 @@ def model_comparison_bars(comparison_df: pd.DataFrame) -> go.Figure:
 
     fig = px.bar(
         melted, x="model", y="value", color="metric_label",
-        barmode="group", title="Model Performance Comparison",
-        labels={"value": "Score", "model": "Model", "metric_label": "Metric"},
+        barmode="group",
+        title=t("chart_model_perf", lang),
+        labels={
+            "value": t("chart_score", lang),
+            "model": t("chart_model", lang),
+            "metric_label": t("chart_metric", lang),
+        },
     )
     fig.update_layout(height=400)
     return fig
@@ -124,6 +144,7 @@ def feature_importance_chart(
     explanation: dict,
     node_type: str = "country",
     top_n: int = 8,
+    lang: str = "en",
 ) -> go.Figure:
     """Bar chart showing feature importance for a link explanation."""
     key = f"{node_type.split('_')[0]}_importance"
@@ -132,7 +153,7 @@ def feature_importance_chart(
 
     importance = explanation.get(key, {})
     if not importance:
-        return go.Figure().update_layout(title="No importance data available")
+        return go.Figure().update_layout(title=t("chart_no_importance", lang))
 
     df = pd.DataFrame([
         {"feature": k, "importance": v}
@@ -141,27 +162,36 @@ def feature_importance_chart(
     df = df.sort_values("importance", ascending=False).head(top_n)
     df = df.sort_values("importance", ascending=True)
 
+    node_label = t("chart_country", lang) if node_type == "country" else t("chart_product_node", lang)
     fig = px.bar(
         df, x="importance", y="feature", orientation="h",
-        title=f"Feature Importance ({node_type.title()})",
-        labels={"importance": "Importance", "feature": "Feature"},
+        title=f"{t('chart_feature_importance', lang)} ({node_label})",
+        labels={
+            "importance": t("chart_importance", lang),
+            "feature": t("chart_feature", lang),
+        },
     )
     fig.update_layout(height=max(250, top_n * 35))
     return fig
 
 
-def section_distribution_chart(opportunities: pd.DataFrame) -> go.Figure:
-    """Pie/treemap of opportunity distribution across HS sections."""
+def section_distribution_chart(opportunities: pd.DataFrame, lang: str = "en") -> go.Figure:
+    """Pie/treemap of opportunity distribution across HS chapters."""
+    from mktrade.viz.hs_names import HS_CHAPTERS, HS_CHAPTERS_MK, chapter_display
+
     df = opportunities.copy()
-    df["section_name"] = df["section"].apply(_section_label)
-    section_counts = df["section_name"].value_counts().reset_index()
-    section_counts.columns = ["section", "count"]
+    df["chapter_num"] = df["hs4"].apply(lambda x: int(x) // 100)
+    df["chapter_name"] = df["chapter_num"].apply(lambda c: chapter_display(c, lang))
+    chapter_counts = df["chapter_name"].value_counts().reset_index()
+    chapter_counts.columns = ["chapter", "count"]
 
     fig = px.pie(
-        section_counts, values="count", names="section",
-        title="Opportunities by HS Section",
+        chapter_counts, values="count", names="chapter",
+        title=t("chart_opportunities_by_chapter", lang),
+        hole=0.4,
     )
-    fig.update_layout(height=400)
+    fig.update_traces(textposition="inside", textinfo="percent+label")
+    fig.update_layout(height=400, showlegend=False)
     return fig
 
 
@@ -169,13 +199,7 @@ def temporal_validation_chart(
     predictions: pd.DataFrame,
     actuals: pd.DataFrame,
 ) -> go.Figure:
-    """Show how many top-K predictions appeared in held-out years.
-
-    Parameters
-    ----------
-    predictions : DataFrame with 'hs4' and 'score' columns (ranked).
-    actuals : DataFrame with 'hs4' column (products that actually appeared).
-    """
+    """Show how many top-K predictions appeared in held-out years."""
     actual_set = set(actuals["hs4"].unique())
     ks = [5, 10, 20, 50, 100, 200]
     hit_rates = []
@@ -211,10 +235,7 @@ def product_space_network(
     highlight_products: list[str] | None = None,
     top_edges: int = 2000,
 ) -> go.Figure:
-    """Simplified product-space network as a Plotly scatter (spring layout).
-
-    For the full interactive version, see the Streamlit dashboard which uses pyvis.
-    """
+    """Simplified product-space network as a Plotly scatter (spring layout)."""
     import networkx as nx
 
     prox = proximity_df.copy()
@@ -226,7 +247,6 @@ def product_space_network(
 
     pos = nx.spring_layout(G, k=0.5, iterations=50, seed=42)
 
-    # Edges
     edge_x, edge_y = [], []
     for u, v in G.edges():
         x0, y0 = pos[u]
@@ -240,7 +260,6 @@ def product_space_network(
         line=dict(width=0.3, color="#ccc"), hoverinfo="none",
     ))
 
-    # Nodes
     node_x = [pos[n][0] for n in G.nodes()]
     node_y = [pos[n][1] for n in G.nodes()]
     node_text = list(G.nodes())
