@@ -1,103 +1,184 @@
-# MK Trade KG-GNN
+# MKD Trade Opportunity Explorer
 
-Knowledge-graph and Graph Neural Network link prediction for discovering
-export-expansion opportunities for North Macedonia.
+**Knowledge Graph + GNN Link Prediction for North Macedonia Export Opportunities**
 
-## Quick start
+MSc Thesis project that predicts new export opportunities for North Macedonia using Graph Neural Networks trained on international trade data.
 
-```bash
-# 1. Clone & install
-git clone <repo-url> && cd wbs_mk_trade
-uv pip install -e ".[dev]"
-cp .env.example .env          # edit with your Comtrade key + Neo4j password
+- **Task A (Product Diversification):** Which new products could MKD start exporting competitively?
+- **Task B (Market Expansion):** For products MKD already exports, which new countries could it sell to?
 
-# 2. Start infrastructure
-make neo4j-up                 # Neo4j 5.x + GDS (Docker required)
+## Results
 
-# 3. Run the pipeline
-make data                     # Phase 1: download + clean
-make complexity               # Phase 2: ecomplexity metrics
-make graph                    # Phase 3: build KG (Neo4j + PyG)
-make train                    # Phase 4: train GNNs + baselines
-make opportunities            # Phase 5: generate MKD report
+| Model | ROC AUC | Avg Precision |
+|-------|---------|---------------|
+| GAT | 0.7803 | 0.7616 |
+| HGT | 0.6800 | 0.6692 |
+| Density Baseline | 0.6500 | 0.6532 |
+| GraphSAGE | 0.6295 | 0.5932 |
+| GCN | 0.5978 | 0.5730 |
 
-# 4. Explore results
-make dashboard                # Streamlit app on localhost:8501
-```
+## Quick Start
 
-## Project structure
-
-```
-wbs_mk_trade/
-├── configs/                  # YAML configuration
-│   ├── data.yaml             #   data sources, paths, year ranges
-│   ├── graph.yaml            #   KG schema, Neo4j, embeddings
-│   ├── train.yaml            #   training hyper-parameters
-│   └── model/                #   per-architecture configs
-│       ├── graphsage.yaml
-│       ├── gat.yaml
-│       ├── gcn.yaml
-│       ├── rgcn.yaml
-│       ├── hgt.yaml
-│       └── vgae.yaml
-├── data/
-│   ├── raw/                  # cached downloads (git-ignored)
-│   ├── interim/              # cleaned parquets
-│   ├── processed/            # final tensors / HeteroData
-│   └── external/             # CEPII, WDI
-├── src/mktrade/              # main Python package
-│   ├── config.py             # pydantic-settings config loader
-│   ├── data/                 # download, clean, ISO/M49 mapping
-│   ├── complexity/           # ecomplexity wrapper + baselines
-│   ├── graph/                # NetworkX, Neo4j, PyG HeteroData
-│   ├── models/               # GNN encoders + decoders
-│   ├── train/                # splits, training loop
-│   ├── eval/                 # metrics, comparison, gravity baseline
-│   ├── opportunities/        # ranking + GNNExplainer
-│   └── viz/                  # Streamlit app + Plotly charts
-├── scripts/                  # thin CLI entry points (00–05)
-├── tests/                    # pytest suite
-├── notebooks/                # EDA / prototyping
-├── reports/                  # figures + thesis drafts
-├── models/                   # saved checkpoints
-├── pyproject.toml            # deps, ruff, black, mypy, pytest
-├── Makefile                  # pipeline orchestration
-├── docker-compose.yml        # Neo4j + GDS + MLflow
-├── .env.example              # template environment vars
-└── .pre-commit-config.yaml   # ruff + black + mypy hooks
-```
-
-## Two prediction tasks
-
-| Task | Link type | Question |
-|------|-----------|----------|
-| **A** (product diversification) | Country → Product | What new products could MKD export? |
-| **B** (market expansion) | Country → Product → Country | Which new markets for MKD's existing products? |
-
-## Models & baselines
-
-**GNN encoders:** GraphSAGE, GAT, GCN, R-GCN, HGT (+ GAE/VGAE variants)
-**Decoders:** dot-product, DistMult, MLP
-**Baselines:** complexity density/COG, PPML gravity, Adamic-Adar/Jaccard/CN, Neo4j GDS LP
-
-## Evaluation
-
-Metrics: ROC-AUC, AP, Precision@K, Recall@K, MRR, Hits@K
-Headline experiment: **temporal holdout** — do top-ranked predictions appear in future years?
-
-## Phase roadmap
-
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 0 | Scaffold repo, configs, stubs | Done |
-| 1 | Data acquisition & cleaning (Atlas, Comtrade, CEPII, WDI) | Done |
-| 2 | Economic complexity (ecomplexity pipeline) | Done |
-| 3 | Knowledge graph (Neo4j + NetworkX + PyG HeteroData) | Done |
-| 4 | GNN training, baselines, evaluation, ablations | Done |
-| 5 | Opportunity report, explanations, Streamlit dashboard | Done |
-
-## Requirements
+### Prerequisites
 
 - Python 3.11+
-- Docker (for Neo4j + MLflow)
-- UN Comtrade API key (free tier)
+- Git
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/<your-username>/wbs-mk-trade.git
+cd wbs-mk-trade
+pip install -e .
+```
+
+### 2. Environment setup
+
+```bash
+cp .env.example .env
+# Edit .env and add your UN Comtrade API key (free at https://comtradeplus.un.org/)
+# Neo4j is optional — the pipeline falls back to NetworkX automatically
+```
+
+### 3. Run the dashboard (quick — uses pre-computed results)
+
+The `reports/` directory contains pre-computed results, so the dashboard works immediately:
+
+```bash
+python src/mktrade/viz/app.py
+# Open http://localhost:8050
+```
+
+### 4. Reproduce from scratch (full pipeline)
+
+To rebuild everything from raw data:
+
+```bash
+# Phase 1: Download and clean data (~15 min, needs internet + Comtrade API key)
+python scripts/00_download_data.py
+
+# Phase 2: Compute economic complexity metrics (RCA, ECI, PCI, proximity)
+python scripts/01_build_complexity.py
+
+# Phase 3: Build knowledge graph (NetworkX + PyG HeteroData)
+python scripts/02_build_graph.py
+
+# Phase 4: Train GNN models (GAT, HGT, GraphSAGE, GCN) + baselines
+python scripts/04_train_models.py
+
+# Phase 5: Generate opportunity rankings, ensemble scores, explanations
+python scripts/05_generate_opportunities.py
+
+# Launch dashboard
+python src/mktrade/viz/app.py
+```
+
+## Project Structure
+
+```
+wbs-mk-trade/
+├── configs/                    # YAML configuration files
+│   ├── data.yaml              # Data source paths and parameters
+│   ├── graph.yaml             # Graph construction settings
+│   ├── train.yaml             # Training hyperparameters
+│   └── model/                 # Per-model configs (GAT, HGT, GCN, etc.)
+├── data/
+│   ├── raw/                   # Raw downloads (gitignored)
+│   ├── processed/             # Cleaned parquets, PyG data (gitignored)
+│   └── external/              # CEPII gravity, WDI (gitignored)
+├── models/                    # Saved model checkpoints (gitignored)
+├── reports/                   # Generated results (tracked in git)
+│   ├── task_a_opportunities.csv
+│   ├── task_b_opportunities.csv
+│   ├── ensemble_rankings.csv
+│   ├── model_comparison.csv
+│   └── explanations.json
+├── scripts/                   # Pipeline scripts (run in order)
+│   ├── 00_download_data.py    # Download + clean all data sources
+│   ├── 01_build_complexity.py # Economic complexity metrics
+│   ├── 02_build_graph.py      # Knowledge graph construction
+│   ├── 04_train_models.py     # GNN training + baselines
+│   └── 05_generate_opportunities.py  # Ranking + explanations
+├── src/mktrade/               # Main package
+│   ├── config.py              # Pydantic-settings config loader
+│   ├── data/                  # Data loading, cleaning, ISO/M49 mapping
+│   ├── complexity/            # Economic complexity (RCA, ECI, PCI)
+│   ├── graph/                 # NetworkX, Neo4j, PyG HeteroData builders
+│   ├── models/                # GNN encoders (GAT, HGT, SAGE, GCN)
+│   ├── train/                 # Training loop, temporal splits
+│   ├── eval/                  # Evaluation metrics, gravity baseline
+│   ├── opportunities/         # Ranking, ensemble, explanations
+│   └── viz/                   # Dashboard (Dash/Plotly), i18n, HS names
+├── tests/                     # Unit tests (pytest)
+├── pyproject.toml             # Dependencies and tool config
+└── .env.example               # Environment variable template
+```
+
+## Data Sources
+
+| Source | Description | Access |
+|--------|-------------|--------|
+| [Harvard Atlas](https://dataverse.harvard.edu/) | HS4 exports (country × product × year) | Free download |
+| [UN Comtrade](https://comtradeplus.un.org/) | Bilateral trade flows | Free API key required |
+| [CEPII Gravity](http://www.cepii.fr/CEPII/en/bdd_modele/bdd_modele_item.asp?id=8) | Distance, contiguity, language, FTA | Free download |
+| [World Bank WDI](https://databank.worldbank.org/) | GDP, GDP per capita, population | Free API |
+
+All data is downloaded automatically by `scripts/00_download_data.py`. The only manual requirement is a Comtrade API key in `.env`.
+
+## Two Prediction Tasks
+
+| Task | Link Type | Question |
+|------|-----------|----------|
+| **A** (Product Diversification) | Country → Product | What new products could MKD export? |
+| **B** (Market Expansion) | Country → Product → Country | Which new markets for existing exports? |
+
+## Knowledge Graph
+
+The graph has **3 node types** and **7 edge types**:
+
+- **Nodes:** Country (230), Product (1,241), HS Section (21)
+- **Edges:** `exports`, `proximity`, `in_section`, `trades_with`, `neighbor_of` + reverse edges
+- **Country features (14-dim):** ECI, diversity, GDP, population, landlocked, EU, CEFTA, region
+- **Product features (23-dim):** PCI, ubiquity, section one-hot
+
+## Models & Baselines
+
+**GNN encoders:** GAT, HGT, GraphSAGE, GCN
+
+**Baselines:** Economic complexity density, PPML gravity model, Adamic-Adar, Jaccard coefficient, Common Neighbors
+
+**Evaluation:** Temporal holdout (train ≤ 2019, test 2021-2022). Metrics: ROC-AUC, Average Precision, MRR, Precision@K, Recall@K, Hits@K.
+
+## Dashboard
+
+Interactive dashboard built with Dash (Plotly) supporting **English and Macedonian**:
+
+- Product diversification rankings with HS chapter filters
+- Market expansion grouped by product or country
+- Model comparison (heatmap + grouped bar charts)
+- Gradient-based feature importance explanations
+- Glossary of HS codes, trade metrics, and ML terminology
+
+```bash
+python src/mktrade/viz/app.py
+# → http://localhost:8050
+```
+
+## Key Technical Notes
+
+- **Temporal split:** Train ≤ 2019, validation 2020, test 2021–2022
+- **Proximity sparsification:** HGT uses top-50 neighbors per product (prevents OOM); GAT/SAGE/GCN use full proximity edges
+- **Graceful degradation:** Neo4j optional (NetworkX fallback), Comtrade key optional (cached data fallback)
+- **Ensemble:** 60% GNN + 30% density + 10% classical baselines
+- **Explanations:** Gradient-based attribution (input × gradient) for feature importance
+
+## Tests
+
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+## License
+
+MIT

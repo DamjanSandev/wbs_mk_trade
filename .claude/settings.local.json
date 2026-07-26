@@ -16,7 +16,8 @@
       "Bash(taskkill:*)",
       "Read(//c/Python313/**)",
       "Read(//c/Users/dsand/**)",
-      "Bash(pip show:*)"
+      "Bash(pip show:*)",
+      "Bash(ls:*)"
     ]
   }
 }
