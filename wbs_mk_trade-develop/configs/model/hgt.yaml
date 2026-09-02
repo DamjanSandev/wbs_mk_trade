@@ -1,0 +1,15 @@
+# ── HGT (Heterogeneous Graph Transformer) config ─────────
+encoder:
+  name: "HGT"
+  conv: "HGTConv"
+  hidden_channels: 128
+  num_layers: 2
+  heads: 4
+  dropout: 0.3
+  heterogeneous: true
+
+decoder:
+  name: "mlp"
+  mlp_hidden: 64
+
+variational: false

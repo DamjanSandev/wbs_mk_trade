@@ -1,0 +1,114 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mktrade"
+version = "0.1.0"
+description = "Knowledge-graph + GNN link-prediction for North Macedonia export-expansion opportunities"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "dsand" }]
+
+dependencies = [
+    # ── data ──────────────────────────────────────────────
+    "pandas>=2.2,<3",
+    "pyarrow>=17,<18",
+    "polars>=1.0,<2",
+    "duckdb>=1.0,<2",
+    "openpyxl>=3.1,<4",
+    "comtradeapicall>=1.1,<2",
+    "requests>=2.32,<3",
+    "httpx>=0.27,<1",
+    # ── economic complexity ───────────────────────────────
+    "ecomplexity>=0.5,<1",
+    # ── graph / neo4j ─────────────────────────────────────
+    "neo4j>=5.20,<6",
+    "networkx>=3.3,<4",
+    # ── GNN ───────────────────────────────────────────────
+    # PyTorch >=2.9 has a Windows DLL load-order regression (c10.dll) when
+    # packages such as PyArrow are imported first. Keep Windows on 2.8 until
+    # the upstream regression is resolved.
+    "torch>=2.3,<2.9; sys_platform == 'win32'",
+    "torch>=2.3,<3; sys_platform != 'win32'",
+    "torch-geometric>=2.5,<3",
+    # ── baselines / stats ─────────────────────────────────
+    "scikit-learn>=1.5,<2",
+    "statsmodels>=0.14,<1",
+    # ── config / tracking ─────────────────────────────────
+    "pydantic>=2.7,<3",
+    "pydantic-settings>=2.3,<3",
+    "pyyaml>=6.0,<7",
+    "mlflow>=2.14,<3",
+    # ── viz ────────────────────────────────────────────────
+    "plotly>=5.22,<6",
+    "dash>=2.17,<5",
+    "dash-bootstrap-components>=1.6,<3",
+    "matplotlib>=3.9,<4",
+    "pyvis>=0.3,<1",
+    # ── util ──────────────────────────────────────────────
+    "python-dotenv>=1.0,<2",
+    "tqdm>=4.66,<5",
+    "loguru>=0.7,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2,<9",
+    "pytest-cov>=5.0,<6",
+    "ruff>=0.5,<1",
+    "black>=24.4,<25",
+    "mypy>=1.10,<2",
+    "pre-commit>=3.7,<4",
+    "ipykernel>=6.29,<7",
+    "jupyter>=1.0,<2",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mktrade"]
+
+# ── ruff ──────────────────────────────────────────────────
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "TCH"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["mktrade"]
+
+# ── black ─────────────────────────────────────────────────
+[tool.black]
+target-version = ["py311"]
+line-length = 100
+
+# ── mypy ──────────────────────────────────────────────────
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+    "comtradeapicall.*",
+    "ecomplexity.*",
+    "torch_geometric.*",
+    "pyvis.*",
+    "neo4j.*",
+    "mlflow.*",
+    "plotly.*",
+    "dash.*",
+    "dash_bootstrap_components.*",
+]
+ignore_missing_imports = true
+
+# ── pytest ────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short"

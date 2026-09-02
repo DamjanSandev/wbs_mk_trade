@@ -1,0 +1,96 @@
+# ── Knowledge-graph schema & build configuration ──────────
+neo4j:
+  uri: "${NEO4J_URI:bolt://localhost:7687}"
+  user: "${NEO4J_USER:neo4j}"
+  password: "${NEO4J_PASSWORD:changeme}"
+  database: "neo4j"
+  import_batch_size: 5000
+
+# ── Node types ────────────────────────────────────────────
+nodes:
+  country:
+    label: "Country"
+    key: "iso3"
+    properties:
+      - iso3
+      - name
+      - region
+      - gdp
+      - gdp_pc
+      - population
+      - landlocked
+      - eci
+      - eu_member
+      - cefta_member
+
+  product:
+    label: "Product"
+    key: "hs_code"
+    properties:
+      - hs_code
+      - hs_level
+      - name
+      - section
+      - pci
+
+  product_section:
+    label: "ProductSection"
+    key: "code"
+    properties:
+      - code
+      - name
+
+# ── Edge types ────────────────────────────────────────────
+edges:
+  exports:
+    type: "EXPORTS"
+    source: "Country"
+    target: "Product"
+    properties: [value, rca, year]
+
+  imports:
+    type: "IMPORTS"
+    source: "Country"
+    target: "Product"
+    properties: [value, year]
+
+  trades_with:
+    type: "TRADES_WITH"
+    source: "Country"
+    target: "Country"
+    properties: [export_value, import_value, year]
+
+  ships:
+    type: "SHIPS"
+    source: "Country"
+    target: "Country"
+    properties: [hs_code, value, year]
+
+  proximity:
+    type: "PROXIMITY"
+    source: "Product"
+    target: "Product"
+    properties: [weight]
+
+  in_section:
+    type: "IN_SECTION"
+    source: "Product"
+    target: "ProductSection"
+
+  neighbor_of:
+    type: "NEIGHBOR_OF"
+    source: "Country"
+    target: "Country"
+    properties: [distance, contiguous, common_lang, fta]
+
+# ── Structural embeddings (GDS) ──────────────────────────
+embeddings:
+  fastrp:
+    dimensions: 64
+    iterations: 3
+  node2vec:
+    dimensions: 64
+    walk_length: 80
+    walks_per_node: 10
+    p: 1.0
+    q: 1.0

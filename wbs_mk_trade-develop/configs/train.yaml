@@ -1,0 +1,58 @@
+# ── Training configuration ────────────────────────────────
+seed: 42
+device: "auto"                        # auto | cpu | cuda
+
+# ── Split strategy ────────────────────────────────────────
+split:
+  strategy: "temporal"                 # temporal | random
+  # Temporal: train on years <= cutoff, validate on cutoff+1, test on cutoff+2..+k
+  temporal:
+    train_end_year: 2019
+    val_year: 2020
+    test_years: [2021, 2022]
+  # Random: standard link-split ratios
+  random:
+    train_ratio: 0.85
+    val_ratio: 0.05
+    test_ratio: 0.10
+    num_neg_samples: 1                 # neg:pos ratio
+
+# ── Task selection ────────────────────────────────────────
+task: "task_a"                         # task_a | task_b | both
+
+# A link is successful only when it is economically meaningful and persistent.
+success_target:
+  min_export_value: 100000              # USD per year
+  min_rca: 1.0
+  min_consecutive_years: 2
+
+# Rank the real candidate universe per country and optimise top-K quality.
+evaluation:
+  all_candidates: true
+  selection_metric: "ndcg@10"
+  rolling_cutoffs: [2016, 2017, 2018, 2019]
+  seeds: [13, 42, 73]
+
+reranker:
+  model: "logistic"
+  calibrate: true
+  bootstrap_runs: 20
+
+# ── Dataloader ────────────────────────────────────────────
+loader:
+  num_neighbors: [15, 10]              # per-layer neighbor sample sizes
+  batch_size: 1024
+  num_workers: 0                       # 0 on Windows
+
+# ── Optimiser ─────────────────────────────────────────────
+optimizer:
+  lr: 0.001
+  weight_decay: 0.0001
+
+epochs: 200
+patience: 20                           # early-stopping patience
+
+# ── MLflow ────────────────────────────────────────────────
+mlflow:
+  experiment_name: "mk-trade-link-pred"
+  tracking_uri: "${MLFLOW_TRACKING_URI:http://localhost:5000}"

@@ -1,0 +1,14 @@
+# ── GraphSAGE encoder config ──────────────────────────────
+encoder:
+  name: "GraphSAGE"
+  conv: "SAGEConv"
+  hidden_channels: 128
+  num_layers: 2
+  dropout: 0.3
+  aggr: "mean"
+  heterogeneous: true                  # wrap with to_hetero
+
+decoder:
+  name: "dot_product"                  # dot_product | distmult | mlp
+
+variational: false                     # true → VGAE

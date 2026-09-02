@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module type="PYTHON_MODULE" version="4">
+  <component name="NewModuleRootManager">
+    <content url="file://$MODULE_DIR$">
+      <sourceFolder url="file://$MODULE_DIR$/wbs_mk_trade-develop/.venv311/Lib/site-packages" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/wbs_mk_trade-develop/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/wbs_mk_trade-develop" isTestSource="false" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv" />
+      <excludeFolder url="file://$MODULE_DIR$/.venv311" />
+    </content>
+    <orderEntry type="jdk" jdkName="Python 3.11 (wbs_mk_trade-develop)" jdkType="Python SDK" />
+    <orderEntry type="sourceFolder" forTests="false" />
+  </component>
+  <component name="PyDocumentationSettings">
+    <option name="format" value="PLAIN" />
+    <option name="myDocStringFormat" value="Plain" />
+  </component>
+  <component name="TestRunnerService">
+    <option name="PROJECT_TEST_RUNNER" value="py.test" />
+  </component>
+</module>

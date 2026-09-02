@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(touch:*)",
+      "Bash(pip list:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "WebSearch",
+      "WebFetch(domain:atlas.hks.harvard.edu)",
+      "WebFetch(domain:dataverse.harvard.edu)",
+      "WebFetch(domain:github.com)",
+      "Bash(find:*)",
+      "Bash(tasklist:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(curl:*)",
+      "Bash(taskkill:*)",
+      "Read(//c/Python313/**)",
+      "Read(//c/Users/dsand/**)",
+      "Bash(pip show:*)",
+      "Bash(ls:*)"
+    ]
+  }
+}
