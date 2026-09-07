@@ -214,6 +214,41 @@ def test_model_comparison_heatmap():
     assert fig is not None
 
 
+def test_model_comparison_bars_include_auc_and_average_precision():
+    from mktrade.viz.plots import model_comparison_bars
+
+    df = pd.DataFrame({
+        "roc_auc": [0.70, 0.71],
+        "avg_precision": [0.0117, 0.0085],
+    }, index=["density_baseline", "hgt"])
+
+    fig = model_comparison_bars(df)
+
+    assert {trace.name for trace in fig.data} == {"Roc Auc", "Avg Precision"}
+
+
+def test_ranking_quality_chart_separates_top_k_metrics_and_ap_lift():
+    from mktrade.viz.plots import ranking_quality_chart
+
+    df = pd.DataFrame({
+        "avg_precision": [0.0117, 0.0085],
+        "precision@10": [0.0311, 0.0176],
+        "map@10": [0.0400, 0.0322],
+        "ndcg@10": [0.0718, 0.0498],
+    }, index=["density_baseline", "hgt"])
+
+    fig = ranking_quality_chart(df, random_ap_baseline=0.00379)
+
+    assert len(fig.data) == 4
+    assert [trace.name for trace in fig.data[:3]] == [
+        "Precision@10", "MAP@10", "NDCG@10",
+    ]
+    assert fig.data[3].name == "AP lift"
+    assert fig.data[3].y[0] == pytest.approx(0.0117 / 0.00379)
+    assert fig.data[3].customdata[0] == pytest.approx(0.0117)
+    assert any(shape.y0 == 1.0 and shape.y1 == 1.0 for shape in fig.layout.shapes)
+
+
 def test_feature_importance_chart():
     from mktrade.viz.plots import feature_importance_chart
 

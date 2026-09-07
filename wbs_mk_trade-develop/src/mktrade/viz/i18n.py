@@ -150,16 +150,24 @@ established trade economics (economic complexity, product proximity, gravity mod
         "en": """| Metric | Description |
 |--------|-------------|
 | **ROC AUC** | Area under the ROC curve (0.5 = random, 1.0 = perfect). Measures how well the model separates real exports from non-exports |
-| **Avg Precision** | Area under the Precision-Recall curve. Better than AUC when positives are rare |
-| **MRR** | Mean Reciprocal Rank — how high the first correct prediction ranks. Low values (~0.0003) are expected when ranking among ~54,000 candidates |
+| **Avg Precision** | Area under the Precision-Recall curve. Random AP is the positive rate: 0.379% for this test set |
+| **AP lift** | Average Precision divided by the 0.379% random baseline. A value of 1× is random; larger is better |
+| **MRR** | Query-based mean reciprocal rank — the average reciprocal rank of the first correct product within each country query |
+| **Precision@10** | Of each country's top 10 predictions, how many are actual future successes |
+| **MAP@10** | Mean Average Precision in the top 10, rewarding correct recommendations placed earlier |
+| **NDCG@10** | Ranking quality in the top 10, giving more credit when correct recommendations appear near the top |
 | **Hits@K** | Fraction of true new exports appearing in the top K predictions |
 | **Precision@50** | Of the top 50 predictions, how many are actual future exports |
 | **Recall@50** | Of all actual future exports, how many appear in the top 50 predictions |""",
         "mk": """| Метрика | Опис |
 |---------|------|
 | **ROC AUC** | Површина под ROC кривата (0.5 = случајно, 1.0 = совршено). Мери колку добро моделот ги разделува вистинските извози од не-извозите |
-| **Avg Precision** | Површина под кривата прецизност-отповикување. Подобра од AUC кога позитивите се ретки |
-| **MRR** | Среден реципрочен ранг — колку високо е рангирано првото точно предвидување. Ниски вредности (~0.0003) се очекувани при рангирање меѓу ~54.000 кандидати |
+| **Avg Precision** | Површина под кривата прецизност-отповикување. Случајниот AP е стапката на позитивни примери: 0,379% за овој тест |
+| **AP подобрување** | Просечната прецизност поделена со случајната основа од 0,379%. Вредност 1× е случајно рангирање; повисоко е подобро |
+| **MRR** | Среден реципрочен ранг по барање — просечниот реципрочен ранг на првиот точен производ за секоја земја |
+| **Precision@10** | Од првите 10 предвидувања за секоја земја, колку се вистински идни успеси |
+| **MAP@10** | Средна просечна прецизност во првите 10, која ги наградува точните препораки поставени порано |
+| **NDCG@10** | Квалитет на рангирањето во првите 10, со поголема тежина за точните препораки при врвот |
 | **Hits@K** | Дел од вистинските нови извози кои се појавуваат во врвните K предвидувања |
 | **Precision@50** | Од врвните 50 предвидувања, колку се вистински идни извози |
 | **Recall@50** | Од сите вистински идни извози, колку се појавуваат во врвните 50 предвидувања |""",
@@ -349,6 +357,11 @@ For example, HS 8708 (Vehicle Parts) belongs to Chapter 87 (Vehicles).""",
     "score_label": {"en": "Score", "mk": "Резултат"},
     "tab_heatmap": {"en": "Heatmap", "mk": "Топлотна мапа"},
     "tab_bar_chart": {"en": "Bar Chart", "mk": "Столбест графикон"},
+    "tab_ranking_quality": {"en": "Ranking Quality", "mk": "Квалитет на рангирање"},
+    "ranking_quality_caption": {
+        "en": "AP lift compares each model's Average Precision with random ranking (0.379% AP = 1×). The random line applies only to AP lift.",
+        "mk": "AP подобрувањето ја споредува просечната прецизност на секој модел со случајно рангирање (0,379% AP = 1×). Случајната линија важи само за AP подобрувањето.",
+    },
 
     # ── Ensemble column display names ──
     "col_ensemble_score": {"en": "Ensemble Score", "mk": "Ансамбл резултат"},
@@ -372,6 +385,14 @@ For example, HS 8708 (Vehicle Parts) belongs to Chapter 87 (Vehicles).""",
     "chart_metric": {"en": "Metric", "mk": "Метрика"},
     "chart_model": {"en": "Model", "mk": "Модел"},
     "chart_model_perf": {"en": "Model Performance Comparison", "mk": "Споредба на перформанси на модели"},
+    "chart_auc_comparison": {"en": "ROC-AUC by Model", "mk": "ROC-AUC по модел"},
+    "chart_ranking_quality": {"en": "Ranking Quality at the Top of the List", "mk": "Квалитет на рангирање на врвот на листата"},
+    "chart_top10_quality": {"en": "Top-10 ranking metrics", "mk": "Метрики за првите 10"},
+    "chart_ap_lift": {"en": "Average Precision lift over random", "mk": "Подобрување на просечната прецизност над случајното"},
+    "chart_ap_lift_short": {"en": "AP lift", "mk": "AP подобрување"},
+    "chart_avg_precision": {"en": "Average Precision", "mk": "Просечна прецизност"},
+    "chart_random_baseline": {"en": "Random baseline (1×)", "mk": "Случајна основа (1×)"},
+    "chart_lift": {"en": "Lift over random", "mk": "Подобрување над случајното"},
     "chart_score": {"en": "Score", "mk": "Резултат"},
     "chart_no_importance": {"en": "No importance data available", "mk": "Нема достапни податоци за важност"},
     "chart_feature_importance": {"en": "Feature Importance", "mk": "Важност на карактеристики"},

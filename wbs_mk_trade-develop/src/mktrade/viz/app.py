@@ -723,7 +723,11 @@ def page_models(lang):
         return html.Div([_page_header(t("models_header", lang), t("models_desc", lang)),
                          dbc.Alert(t("no_data_warning", lang), color="warning")])
 
-    from mktrade.viz.plots import model_comparison_heatmap, model_comparison_bars
+    from mktrade.viz.plots import (
+        model_comparison_bars,
+        model_comparison_heatmap,
+        ranking_quality_chart,
+    )
 
     # Metric cards for each model
     metric_cards = []
@@ -747,6 +751,9 @@ def page_models(lang):
     fig_bar = model_comparison_bars(COMP, lang=lang)
     _style_fig(fig_bar)
 
+    fig_ranking = ranking_quality_chart(COMP, lang=lang)
+    _style_fig(fig_ranking)
+
     # Full metrics table
     comp_display = COMP.copy()
     comp_display.index = [m.upper() for m in comp_display.index]
@@ -763,6 +770,11 @@ def page_models(lang):
                     label=t("tab_heatmap", lang)),
             dbc.Tab(dcc.Graph(figure=fig_bar, config={"displayModeBar": False}),
                     label=t("tab_bar_chart", lang)),
+            dbc.Tab([
+                dcc.Graph(figure=fig_ranking, config={"displayModeBar": False}),
+                html.P(t("ranking_quality_caption", lang),
+                       className="text-muted px-3 pb-2"),
+            ], label=t("tab_ranking_quality", lang)),
         ], className="mb-4"),
         _divider(),
         html.H2(t("detailed_metrics", lang)),

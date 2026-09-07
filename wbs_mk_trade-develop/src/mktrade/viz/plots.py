@@ -10,6 +10,12 @@ from plotly.subplots import make_subplots
 from mktrade.viz.i18n import t
 
 
+# The redesigned held-out test contains 890 sustained-success links among
+# 235,019 eligible candidates. Positive prevalence is the expected AP of a
+# random ranking, so it is the meaningful reference point for AP lift.
+_RANDOM_AP_BASELINE = 890 / 235_019
+
+
 # HS section code -> broad name (for labelling)
 _SECTION_NAMES = {
     "01": "Animals", "02": "Meat", "03": "Fish", "04": "Dairy",
@@ -113,7 +119,7 @@ def model_comparison_heatmap(comparison_df: pd.DataFrame, lang: str = "en") -> g
 
 
 def model_comparison_bars(comparison_df: pd.DataFrame, lang: str = "en") -> go.Figure:
-    """Grouped bar chart comparing models on key metrics."""
+    """Grouped bar chart comparing ROC-AUC and Average Precision."""
     metrics = ["roc_auc", "avg_precision"]
     available = [m for m in metrics if m in comparison_df.columns]
 
@@ -137,6 +143,101 @@ def model_comparison_bars(comparison_df: pd.DataFrame, lang: str = "en") -> go.F
         },
     )
     fig.update_layout(height=400)
+    return fig
+
+
+def ranking_quality_chart(
+    comparison_df: pd.DataFrame,
+    lang: str = "en",
+    random_ap_baseline: float = _RANDOM_AP_BASELINE,
+) -> go.Figure:
+    """Show top-10 ranking quality and Average Precision lift over random.
+
+    Average Precision uses a different scale from ROC-AUC in this highly
+    imbalanced candidate universe. Expressing it as lift over positive
+    prevalence makes the result interpretable while retaining raw AP in the
+    hover information.
+    """
+    if random_ap_baseline <= 0:
+        raise ValueError("random_ap_baseline must be positive")
+
+    models = [str(model).upper() for model in comparison_df.index]
+    top_k_metrics = [
+        ("precision@10", "Precision@10", "#2563eb"),
+        ("map@10", "MAP@10", "#7c3aed"),
+        ("ndcg@10", "NDCG@10", "#0d9488"),
+    ]
+
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        column_widths=[0.62, 0.38],
+        horizontal_spacing=0.12,
+        subplot_titles=(t("chart_top10_quality", lang), t("chart_ap_lift", lang)),
+    )
+
+    for column, label, color in top_k_metrics:
+        if column not in comparison_df.columns:
+            continue
+        values = comparison_df[column].astype(float)
+        fig.add_trace(
+            go.Bar(
+                x=models,
+                y=values,
+                name=label,
+                marker_color=color,
+                hovertemplate=(
+                    f"{t('chart_model', lang)}: %{{x}}<br>"
+                    f"{label}: %{{y:.2%}}<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=1,
+        )
+
+    if "avg_precision" in comparison_df.columns:
+        ap_values = comparison_df["avg_precision"].astype(float)
+        lift_values = ap_values / random_ap_baseline
+        fig.add_trace(
+            go.Bar(
+                x=models,
+                y=lift_values,
+                name=t("chart_ap_lift_short", lang),
+                marker_color="#f97316",
+                customdata=ap_values,
+                text=[f"{value:.1f}×" for value in lift_values],
+                textposition="outside",
+                cliponaxis=False,
+                hovertemplate=(
+                    f"{t('chart_model', lang)}: %{{x}}<br>"
+                    f"{t('chart_avg_precision', lang)}: %{{customdata:.3%}}<br>"
+                    f"{t('chart_ap_lift_short', lang)}: %{{y:.2f}}×<extra></extra>"
+                ),
+            ),
+            row=1,
+            col=2,
+        )
+        fig.add_hline(
+            y=1.0,
+            line_dash="dash",
+            line_color="#64748b",
+            annotation_text=t("chart_random_baseline", lang),
+            annotation_position="top left",
+            row=1,
+            col=2,
+        )
+
+    fig.update_layout(
+        title=t("chart_ranking_quality", lang),
+        barmode="group",
+        height=470,
+        legend=dict(orientation="h", yanchor="bottom", y=1.12, xanchor="left", x=0),
+        margin=dict(t=120),
+    )
+    fig.update_xaxes(title_text=t("chart_model", lang), row=1, col=1)
+    fig.update_xaxes(title_text=t("chart_model", lang), row=1, col=2)
+    fig.update_yaxes(title_text=t("chart_score", lang), tickformat=".1%", row=1, col=1)
+    fig.update_yaxes(title_text=t("chart_lift", lang), ticksuffix="×", rangemode="tozero", row=1, col=2)
     return fig
 
 
