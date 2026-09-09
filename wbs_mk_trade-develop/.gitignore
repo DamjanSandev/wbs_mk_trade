@@ -7,7 +7,9 @@ build/
 .mypy_cache/
 .ruff_cache/
 .pytest_cache/
-
+# Large generated reranker datasets
+reports/task_a_reranker_validation_all_countries.csv
+reports/task_a_reranker_test_all_countries.csv
 # Data (keep structure, ignore large files)
 data/raw/*
 data/interim/*

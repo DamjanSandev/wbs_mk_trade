@@ -15,12 +15,51 @@ from mktrade.eval.metrics import compute_all_metrics
 from mktrade.models.link_predictor import LinkPredictor
 
 
+def pairwise_ranking_loss(
+    logits: torch.Tensor,
+    labels: torch.Tensor,
+    query_ids: torch.Tensor,
+    max_negatives: int = 20,
+) -> torch.Tensor:
+    """RankNet-style loss using each query's highest-scoring negatives."""
+
+    losses: list[torch.Tensor] = []
+    for query in torch.unique(query_ids):
+        query_mask = query_ids == query
+        positives = logits[query_mask & (labels > 0.5)]
+        negatives = logits[query_mask & (labels <= 0.5)]
+        if positives.numel() == 0 or negatives.numel() == 0:
+            continue
+        limit = min(max(1, int(max_negatives)), negatives.numel())
+        hard_negatives = torch.topk(negatives, k=limit).values
+        differences = positives.unsqueeze(1) - hard_negatives.unsqueeze(0)
+        losses.append(F.softplus(-differences).mean())
+    if not losses:
+        return logits.sum() * 0.0
+    return torch.stack(losses).mean()
+
+
+def ranking_selection_score(metrics: dict[str, float], metric_name: str) -> float:
+    """Resolve checkpoint selection, including a balanced ranking composite."""
+
+    if metric_name != "ranking_composite":
+        return float(metrics.get(metric_name, metrics["avg_precision"]))
+    components = [
+        max(float(metrics.get("avg_precision", 0.0)), 0.0),
+        max(float(metrics.get("mrr", 0.0)), 0.0),
+        max(float(metrics.get("ndcg@10", 0.0)), 0.0),
+    ]
+    if any(component == 0.0 for component in components):
+        return 0.0
+    return float(np.prod(components) ** (1.0 / len(components)))
+
+
 class Trainer:
     """Manages the train/val loop for link-prediction models.
 
     Features:
     - Full-batch training (graph fits in memory).
-    - Early stopping on validation Average Precision.
+    - Early stopping on a configurable validation ranking metric.
     - Best-model checkpointing to models/ directory.
     """
 
@@ -71,12 +110,29 @@ class Trainer:
         edge_label = self.train_data[self.edge_type].edge_label
 
         pred = self.model(self.train_data, edge_label_index, self.src_type, self.dst_type)
-        loss = F.binary_cross_entropy_with_logits(pred, edge_label)
+        positive_count = edge_label.sum().clamp_min(1.0)
+        negative_count = (edge_label <= 0.5).sum().float().clamp_min(1.0)
+        pos_weight = (negative_count / positive_count).detach()
+        classification_loss = F.binary_cross_entropy_with_logits(
+            pred, edge_label, pos_weight=pos_weight
+        )
+        ranking_loss = pairwise_ranking_loss(
+            pred,
+            edge_label,
+            edge_label_index[0],
+            max_negatives=self.cfg.ranking_hard_negatives,
+        )
+        ranking_weight = float(np.clip(self.cfg.ranking_loss_weight, 0.0, 1.0))
+        loss = (1.0 - ranking_weight) * classification_loss + ranking_weight * ranking_loss
 
         loss.backward()
         self.optimizer.step()
 
-        return {"loss": loss.item()}
+        return {
+            "loss": loss.item(),
+            "classification_loss": classification_loss.item(),
+            "ranking_loss": ranking_loss.item(),
+        }
 
     @torch.no_grad()
     def validate(self) -> dict[str, float]:
@@ -89,7 +145,9 @@ class Trainer:
         pred = self.model(self.val_data, edge_label_index, self.src_type, self.dst_type)
         loss = F.binary_cross_entropy_with_logits(pred, edge_label)
 
-        scores = torch.sigmoid(pred).cpu().numpy()
+        # Ranking metrics operate on raw logits. This preserves ordering when
+        # sigmoid probabilities saturate to exactly zero or one in float32.
+        scores = pred.cpu().numpy()
         labels = edge_label.cpu().numpy()
 
         query_ids = edge_label_index[0].cpu().numpy()
@@ -115,7 +173,7 @@ class Trainer:
 
             ap = val_metrics["avg_precision"]
             auc = val_metrics["roc_auc"]
-            selection_score = val_metrics.get(selection_metric, ap)
+            selection_score = ranking_selection_score(val_metrics, selection_metric)
 
             if epoch % 10 == 0 or epoch == 1:
                 logger.info(
@@ -133,6 +191,8 @@ class Trainer:
                     "optimizer_state_dict": self.optimizer.state_dict(),
                     "val_ap": ap,
                     "val_auc": auc,
+                    "val_mrr": val_metrics.get("mrr", 0.0),
+                    "val_ndcg_at_10": val_metrics.get("ndcg@10", 0.0),
                     "selection_metric": selection_metric,
                     "selection_score": selection_score,
                 }, best_path)
@@ -168,7 +228,7 @@ class Trainer:
 
         pred = self.model(test_data, edge_label_index, self.src_type, self.dst_type)
 
-        scores = torch.sigmoid(pred).cpu().numpy()
+        scores = pred.cpu().numpy()
         labels = edge_label.cpu().numpy()
 
         query_ids = edge_label_index[0].cpu().numpy()

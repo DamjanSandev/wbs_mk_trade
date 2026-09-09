@@ -75,13 +75,14 @@ established trade economics (economic complexity, product proximity, gravity mod
     # ── Task A ──
     "task_a_header": {"en": "Task A: Product Diversification", "mk": "Задача А: Диверзификација на производи"},
     "task_a_desc": {
-        "en": "Products that North Macedonia **does not yet export competitively** (RCA < 1) but the GNN predicts it could develop a comparative advantage in. Higher scores indicate stronger predicted fit.",
-        "mk": "Производи кои Северна Македонија **сè уште не ги извезува конкурентно** (RCA < 1), но GNN предвидува дека може да развие компаративна предност. Повисоки резултати значат посилна предвидена соодветност.",
+        "en": "Products that North Macedonia **does not yet export competitively** (RCA < 1) but the learned ranking system predicts it could develop a sustained comparative advantage in. Higher final scores indicate stronger predicted fit.",
+        "mk": "Производи кои Северна Македонија **сè уште не ги извезува конкурентно** (RCA < 1), но научениот систем за рангирање предвидува дека може да развие одржлива компаративна предност. Повисоките конечни резултати значат посилна предвидена соодветност.",
     },
     "num_products": {"en": "Number of products to show", "mk": "Број на производи за прикажување"},
     "filter_chapter": {"en": "Filter by HS chapter", "mk": "Филтрирај по HS поглавје"},
     "opportunity_details": {"en": "Opportunity Details", "mk": "Детали за можности"},
     "col_product": {"en": "Product", "mk": "Производ"},
+    "col_final_score": {"en": "Predicted Success", "mk": "Предвиден успех"},
     "col_gnn_score": {"en": "GNN Score", "mk": "GNN резултат"},
     "col_density": {"en": "Density", "mk": "Густина"},
     "col_pci": {"en": "PCI", "mk": "PCI"},
@@ -91,22 +92,24 @@ established trade economics (economic complexity, product proximity, gravity mod
         "en": """| Column | Description |
 |--------|-------------|
 | **Product** | HS4 code and name — the specific product category |
-| **GNN Score** | Model's predicted probability that MKD will develop this export (0-1) |
+| **Predicted Success** | Validation-calibrated probability from the learned reranker (0-1); this is the final recommendation score |
+| **GNN Score** | The GNN's sigmoid link signal (0-1). It is an input to the reranker, not a calibrated success probability |
 | **Density** | How close MKD's current exports are to this product in the product space (0-1). Higher = easier transition |
 | **PCI** | Product Complexity Index — how sophisticated this product is. Higher = more complex, more valuable |
 | **Chapter** | The HS chapter (first 2 digits), grouping related products |""",
         "mk": """| Колона | Опис |
 |--------|------|
 | **Производ** | HS4 код и име — специфична категорија на производ |
-| **GNN резултат** | Предвидена веројатност дека МКД ќе го развие овој извоз (0-1) |
+| **Предвиден успех** | Веројатност калибрирана на валидациски податоци од научениот прерангирач (0-1); конечниот резултат за препораките |
+| **GNN резултат** | Сигмоиден GNN сигнал за врска (0-1). Тој е влез во прерангирачот, а не калибрирана веројатност за успех |
 | **Густина** | Колку се блиски тековните извози на МКД до овој производ во просторот на производи (0-1). Повисока = полесна транзиција |
 | **PCI** | Индекс на комплексност на производ — колку е софистициран. Повисок = покомплексен, повреден |
 | **Поглавје** | HS поглавје (првите 2 цифри), групирање на слични производи |""",
     },
     "ensemble_header": {"en": "Ensemble Rankings", "mk": "Ансамбл рангирање"},
     "ensemble_caption": {
-        "en": "Weighted combination: 60% GNN score + 30% density + 10% classical baselines. The ensemble balances model predictions with established complexity measures.",
-        "mk": "Пондерирана комбинација: 60% GNN резултат + 30% густина + 10% класични основи. Ансамблот балансира предвидувања на моделот со воспоставени мерки за комплексност.",
+        "en": "Learned combination of GNN, density, complexity, demand, persistence and classical signals. The final score is calibrated on validation outcomes; ranking is driven by the pairwise reranker.",
+        "mk": "Научена комбинација од GNN, густина, комплексност, побарувачка, постојаност и класични сигнали. Конечниот резултат е калибриран на валидациски исходи, а редоследот го одредува парниот прерангирач.",
     },
 
     # ── Task B ──
@@ -141,8 +144,8 @@ established trade economics (economic complexity, product proximity, gravity mod
     # ── Model Comparison ──
     "models_header": {"en": "Model Comparison", "mk": "Споредба на модели"},
     "models_desc": {
-        "en": "All models were trained on exports up to 2019 and tested on **new export links that appeared in 2021-2022**. The task: predict which country-product pairs will become new exports.",
-        "mk": "Сите модели се обучени на извози до 2019 и тестирани на **нови извозни врски кои се појавиле 2021-2022**. Задачата: предвиди кои парови земја-производ ќе станат нови извози.",
+        "en": "Models learn from historical export transitions, validate on the non-overlapping 2019-2020 outcome window, and test on **new sustained export links in 2021-2022**. The task: rank which country-product pairs will become meaningful, persistent exports.",
+        "mk": "Моделите учат од историски извозни премини, се валидираат во непреклопувачкиот период 2019-2020 и се тестираат на **нови одржливи извозни врски во 2021-2022**. Задачата е да се рангира кои парови земја-производ ќе станат значајни и трајни извози.",
     },
     "detailed_metrics": {"en": "Detailed Metrics", "mk": "Детални метрики"},
     "what_metrics_mean": {"en": "What do these metrics mean?", "mk": "Што значат овие метрики?"},
@@ -150,8 +153,8 @@ established trade economics (economic complexity, product proximity, gravity mod
         "en": """| Metric | Description |
 |--------|-------------|
 | **ROC AUC** | Area under the ROC curve (0.5 = random, 1.0 = perfect). Measures how well the model separates real exports from non-exports |
-| **Avg Precision** | Area under the Precision-Recall curve. Random AP is the positive rate: 0.379% for this test set |
-| **AP lift** | Average Precision divided by the 0.379% random baseline. A value of 1× is random; larger is better |
+| **Avg Precision** | Area under the Precision-Recall curve. Random AP equals the positive rate in the evaluated candidate universe |
+| **AP lift** | Average Precision divided by the current test set's positive rate. A value of 1× is random; larger is better |
 | **MRR** | Query-based mean reciprocal rank — the average reciprocal rank of the first correct product within each country query |
 | **Precision@10** | Of each country's top 10 predictions, how many are actual future successes |
 | **MAP@10** | Mean Average Precision in the top 10, rewarding correct recommendations placed earlier |
@@ -162,8 +165,8 @@ established trade economics (economic complexity, product proximity, gravity mod
         "mk": """| Метрика | Опис |
 |---------|------|
 | **ROC AUC** | Површина под ROC кривата (0.5 = случајно, 1.0 = совршено). Мери колку добро моделот ги разделува вистинските извози од не-извозите |
-| **Avg Precision** | Површина под кривата прецизност-отповикување. Случајниот AP е стапката на позитивни примери: 0,379% за овој тест |
-| **AP подобрување** | Просечната прецизност поделена со случајната основа од 0,379%. Вредност 1× е случајно рангирање; повисоко е подобро |
+| **Avg Precision** | Површина под кривата прецизност-отповикување. Случајниот AP е еднаков на стапката на позитивни примери во оценетиот сет |
+| **AP подобрување** | Просечната прецизност поделена со стапката на позитивни примери во тековниот тест. Вредност 1× е случајно рангирање; повисоко е подобро |
 | **MRR** | Среден реципрочен ранг по барање — просечниот реципрочен ранг на првиот точен производ за секоја земја |
 | **Precision@10** | Од првите 10 предвидувања за секоја земја, колку се вистински идни успеси |
 | **MAP@10** | Средна просечна прецизност во првите 10, која ги наградува точните препораки поставени порано |
@@ -359,8 +362,8 @@ For example, HS 8708 (Vehicle Parts) belongs to Chapter 87 (Vehicles).""",
     "tab_bar_chart": {"en": "Bar Chart", "mk": "Столбест графикон"},
     "tab_ranking_quality": {"en": "Ranking Quality", "mk": "Квалитет на рангирање"},
     "ranking_quality_caption": {
-        "en": "AP lift compares each model's Average Precision with random ranking (0.379% AP = 1×). The random line applies only to AP lift.",
-        "mk": "AP подобрувањето ја споредува просечната прецизност на секој модел со случајно рангирање (0,379% AP = 1×). Случајната линија важи само за AP подобрувањето.",
+        "en": "AP lift compares each model's Average Precision with the test set's positive rate (random ranking = 1×). The random line applies only to AP lift.",
+        "mk": "AP подобрувањето ја споредува просечната прецизност на секој модел со стапката на позитивни примери во тестот (случајно рангирање = 1×). Случајната линија важи само за AP подобрувањето.",
     },
 
     # ── Ensemble column display names ──
@@ -378,6 +381,7 @@ For example, HS 8708 (Vehicle Parts) belongs to Chapter 87 (Vehicles).""",
     # ── Plot titles and labels ──
     "chart_top_opportunities": {"en": "Top Predicted Product Opportunities for MKD", "mk": "Најдобро предвидени производни можности за МКД"},
     "chart_gnn_link_score": {"en": "GNN Link Score", "mk": "GNN резултат на врска"},
+    "chart_opportunity_score": {"en": "Predicted Success Probability", "mk": "Предвидена веројатност за успех"},
     "chart_product": {"en": "Product", "mk": "Производ"},
     "chart_chapter": {"en": "Chapter", "mk": "Поглавје"},
     "chart_hs_chapter": {"en": "HS Chapter", "mk": "HS Поглавје"},

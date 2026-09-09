@@ -116,7 +116,7 @@ def compute_query_metrics(
         if labels[mask].sum() > 0:
             query_slices.append((scores[mask], labels[mask]))
     if not query_slices:
-        empty = {"mrr": 0.0, "queries_evaluated": 0.0}
+        empty = {"mrr": 0.0, "map": 0.0, "queries_evaluated": 0.0}
         for k in ks:
             empty.update(
                 {
@@ -131,6 +131,9 @@ def compute_query_metrics(
 
     result = {
         "mrr": float(np.mean([reciprocal_rank(qs, ql) for qs, ql in query_slices])),
+        "map": float(
+            np.mean([average_precision_at_k(qs, ql, len(qs)) for qs, ql in query_slices])
+        ),
         "queries_evaluated": float(len(query_slices)),
     }
     for k in ks:
@@ -163,6 +166,7 @@ def compute_all_metrics(
     results = {
         "roc_auc": roc_auc(scores, labels),
         "avg_precision": average_precision(scores, labels),
+        "positive_rate": float(np.asarray(labels).mean()) if len(labels) else 0.0,
     }
     if query_ids is not None:
         results.update(compute_query_metrics(scores, labels, query_ids, ks))

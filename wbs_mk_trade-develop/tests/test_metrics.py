@@ -108,6 +108,7 @@ def test_query_metrics_are_macro_averaged() -> None:
     queries = np.array([0, 0, 1, 1])
     metrics = compute_query_metrics(scores, labels, queries, ks=[1, 2])
     assert metrics["mrr"] == pytest.approx(0.75)
+    assert metrics["map"] == pytest.approx(0.75)
     assert metrics["precision@1"] == pytest.approx(0.5)
     assert metrics["recall@2"] == 1.0
     assert "map@2" in metrics

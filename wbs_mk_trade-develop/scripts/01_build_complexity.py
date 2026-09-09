@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import pandas as pd
 from loguru import logger
 
-from mktrade.config import load_data_config
+from mktrade.config import load_data_config, load_train_config
 
 
 def parse_args() -> argparse.Namespace:
@@ -43,6 +43,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     cfg = load_data_config()
+    train_cfg = load_train_config()
 
     # Load cleaned Atlas exports
     atlas_path = cfg.processed_dir / "atlas_exports.parquet"
@@ -81,10 +82,23 @@ def main() -> None:
 
     logger.info(f"Complexity output: {len(complexity_df):,} rows, cols: {complexity_df.columns.tolist()}")
 
-    # Compute proximity for the latest available year
-    latest_year = int(atlas_df["year"].max())
-    logger.info(f"\nComputing proximity matrix for year {latest_year}")
-    proximity_df = compute_proximity_matrix(atlas_df, year=latest_year)
+    # Proximity depends on the observed export basket and must be computed at
+    # each modelling cutoff. Falling forward to a later matrix would leak the
+    # future structure of the product space into a historical backtest.
+    if args.year:
+        proximity_years = [args.year]
+    else:
+        inference_cutoffs = {train_cfg.train_end_year, *train_cfg.rolling_cutoffs}
+        requested_cutoffs = inference_cutoffs | {
+            cutoff - train_cfg.min_consecutive_years for cutoff in inference_cutoffs
+        }
+        available_years = set(atlas_df["year"].astype(int).unique())
+        proximity_years = sorted(requested_cutoffs & available_years)
+    proximity_frames = []
+    for proximity_year in proximity_years:
+        logger.info(f"\nComputing proximity matrix for year {proximity_year}")
+        proximity_frames.append(compute_proximity_matrix(atlas_df, year=proximity_year))
+    proximity_df = pd.concat(proximity_frames, ignore_index=True)
 
     # Save all outputs
     save_complexity_outputs(complexity_df, proximity_df, cfg.processed_dir)
@@ -116,7 +130,7 @@ def main() -> None:
                 .nlargest(10, "density")[["hs4", "density", "pci"]]
             )
             if not top_density.empty:
-                logger.info(f"\nTop 10 products by density (NOT yet exported by MKD):")
+                logger.info("\nTop 10 products by density (NOT yet exported by MKD):")
                 for _, row in top_density.iterrows():
                     logger.info(
                         f"  {row['hs4']}: density={row['density']:.4f}, PCI={row.get('pci', 'N/A')}"

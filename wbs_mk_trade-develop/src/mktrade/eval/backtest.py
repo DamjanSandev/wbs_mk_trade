@@ -35,10 +35,10 @@ def make_backtest_windows(
     windows = []
     for cutoff in sorted({int(year) for year in cutoffs}):
         validation_year = cutoff + 1
-        # Test starts after validation onset. Relationships used as validation
-        # positives are filtered from test by temporal_split.
-        test_years = tuple(range(cutoff + 2, cutoff + 2 + persistence_years))
-        required = {validation_year, *test_years}
+        validation_years = set(range(validation_year, validation_year + persistence_years))
+        test_start = validation_year + persistence_years
+        test_years = tuple(range(test_start, test_start + persistence_years))
+        required = {*validation_years, *test_years}
         if required.issubset(available):
             windows.append(BacktestWindow(cutoff, validation_year, test_years))
     return windows

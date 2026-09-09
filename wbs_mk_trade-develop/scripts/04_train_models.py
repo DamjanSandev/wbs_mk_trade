@@ -96,7 +96,7 @@ def _train_and_eval(
             with torch.no_grad():
                 pred = model(test_data_dev, test_data_dev[edge_type].edge_label_index,
                             "country", "product")
-            scores = torch.sigmoid(pred).cpu().numpy()
+            scores = pred.cpu().numpy()
             labels = test_data_dev[edge_type].edge_label.cpu().numpy()
             query_ids = test_data_dev[edge_type].edge_label_index[0].cpu().numpy()
             test_metrics = compute_all_metrics(scores, labels, query_ids=query_ids)
@@ -112,6 +112,95 @@ def _train_and_eval(
         import traceback
         traceback.print_exc()
         return None
+
+
+def _candidate_frame(
+    model_name: str,
+    data,
+    checkpoint_dir: Path,
+    atlas_df: pd.DataFrame,
+    complexity_df: pd.DataFrame,
+    cutoff: int,
+) -> pd.DataFrame:
+    """Score and feature-engineer a complete country-product split."""
+
+    from mktrade.models.link_predictor import build_model
+    from mktrade.opportunities.features import enrich_product_candidate_universe
+
+    model = build_model(model_name, data)
+    checkpoint = torch.load(
+        checkpoint_dir / f"{model_name}_best.pt", weights_only=False, map_location="cpu"
+    )
+    model.load_state_dict(checkpoint["model_state_dict"])
+    model.eval()
+    edge_type = ("country", "exports", "product")
+    edge_index = data[edge_type].edge_label_index
+    with torch.no_grad():
+        logits = model(data, edge_index, "country", "product")
+    countries = data["country"].iso3
+    products = data["product"].hs4
+    frame = pd.DataFrame(
+        {
+            "iso3": [countries[index] for index in edge_index[0].tolist()],
+            "hs4": [str(products[index]).zfill(4) for index in edge_index[1].tolist()],
+            "gnn_logit": logits.numpy(),
+            "gnn_score": torch.sigmoid(logits).numpy(),
+            "label": data[edge_type].edge_label.numpy().astype(int),
+        }
+    )
+    return enrich_product_candidate_universe(frame, atlas_df, complexity_df, cutoff)
+
+
+def _fit_and_evaluate_reranker(
+    model_name: str,
+    val_data,
+    test_data,
+    atlas_df: pd.DataFrame,
+    complexity_df: pd.DataFrame,
+    train_cfg,
+    checkpoint_dir: Path,
+) -> dict[str, float]:
+    """Fit on all validation queries and evaluate on the untouched test split."""
+
+    from mktrade.eval.metrics import compute_all_metrics
+    from mktrade.opportunities.reranker import OpportunityReranker
+
+    logger.info(f"Building all-country reranker features from {model_name} logits...")
+    validation = _candidate_frame(
+        model_name, val_data, checkpoint_dir, atlas_df, complexity_df,
+        train_cfg.train_end_year,
+    )
+    test = _candidate_frame(
+        model_name, test_data, checkpoint_dir, atlas_df, complexity_df,
+        train_cfg.train_end_year,
+    )
+    reranker = OpportunityReranker(
+        random_state=train_cfg.seed,
+        n_bootstrap=train_cfg.reranker_bootstraps,
+        calibrate=train_cfg.reranker_calibrate,
+        model_type=train_cfg.reranker_model,
+        max_pairs_per_query=train_cfg.reranker_max_pairs_per_query,
+    ).fit(validation)
+    distribution = reranker.predict_distribution(test.drop(columns="label"))
+    query_ids = pd.factorize(test["iso3"], sort=True)[0]
+    metrics = compute_all_metrics(
+        distribution["ranking_score"].to_numpy(),
+        test["label"].to_numpy(),
+        ks=[10, 20, 50, 100],
+        query_ids=query_ids,
+    )
+    reranker.save(checkpoint_dir / "task_a_reranker.pkl")
+    reports_dir = Path("reports")
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    validation.to_csv(reports_dir / "task_a_reranker_validation_all_countries.csv", index=False)
+    test_output = pd.concat([test.reset_index(drop=True), distribution.reset_index(drop=True)], axis=1)
+    test_output.to_csv(reports_dir / "task_a_reranker_test_all_countries.csv", index=False)
+    logger.info(
+        f"  Learned reranker: AP={metrics['avg_precision']:.4f}, "
+        f"MRR={metrics['mrr']:.4f}, NDCG@10={metrics['ndcg@10']:.4f} "
+        f"from {reranker.training_queries} validation queries"
+    )
+    return metrics
 
 
 def _run_ablation(
@@ -315,6 +404,7 @@ def main() -> None:
     # ── 3. Train models ──
     all_results: dict[str, dict[str, float]] = {}
     checkpoint_dir = Path("models")
+    model_splits = {}
 
     for model_name in models_to_train:
         logger.info(f"\n{'─'*40}")
@@ -339,6 +429,7 @@ def main() -> None:
             m_train, m_val, m_test = hgt_train, hgt_val, hgt_test
         else:
             m_train, m_val, m_test = train_data, val_data, test_data
+        model_splits[model_name] = (m_train, m_val, m_test)
 
         metrics = _train_and_eval(
             model_name=model_name,
@@ -377,8 +468,8 @@ def main() -> None:
         # Test edges from the test data
         test_ei = test_data["country", "exports", "product"].edge_label_index
         test_labels_t = test_data["country", "exports", "product"].edge_label
-        countries = train_data["country"].iso3
-        products = train_data["product"].hs4
+        countries = test_data["country"].iso3
+        products = test_data["product"].hs4
 
         test_edges_list = [
             (countries[test_ei[0, i].item()], products[test_ei[1, i].item()])
@@ -438,6 +529,39 @@ def main() -> None:
                                f"AP={gravity_metrics['avg_precision']:.4f}")
         except Exception as e:
             logger.warning(f"  Gravity baseline failed: {e}")
+
+    # Fit the deployable second-stage ranker on every validation country, then
+    # evaluate it on the same untouched complete test universe as base models.
+    try:
+        complexity_df = pd.read_parquet(data_cfg.processed_dir / "complexity.parquet")
+        available = []
+        for model_name, (_, model_val, model_test) in model_splits.items():
+            checkpoint_path = checkpoint_dir / f"{model_name}_best.pt"
+            if checkpoint_path.exists():
+                checkpoint = torch.load(checkpoint_path, weights_only=False, map_location="cpu")
+                available.append(
+                    (
+                        float(checkpoint.get("selection_score", checkpoint.get("val_ap", 0.0))),
+                        model_name,
+                        model_val,
+                        model_test,
+                    )
+                )
+        if available:
+            _, selected_model, selected_val, selected_test = max(
+                available, key=lambda item: item[0]
+            )
+            all_results["learned_reranker"] = _fit_and_evaluate_reranker(
+                selected_model,
+                selected_val,
+                selected_test,
+                atlas_df,
+                complexity_df,
+                train_cfg,
+                checkpoint_dir,
+            )
+    except Exception as e:
+        logger.warning(f"  Learned reranker evaluation failed: {e}")
 
     # ── 5. Comparison table ──
     logger.info(f"\n{'='*60}")

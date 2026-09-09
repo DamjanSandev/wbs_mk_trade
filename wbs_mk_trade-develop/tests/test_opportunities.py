@@ -199,6 +199,7 @@ def test_opportunity_bar_chart():
     fig = opportunity_bar_chart(df, top_k=5)
     assert fig is not None
     assert len(fig.data) > 0
+    assert fig.layout.xaxis.title.text == "Predicted Success Probability"
 
 
 def test_model_comparison_heatmap():

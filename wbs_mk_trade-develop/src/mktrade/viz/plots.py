@@ -10,9 +10,8 @@ from plotly.subplots import make_subplots
 from mktrade.viz.i18n import t
 
 
-# The redesigned held-out test contains 890 sustained-success links among
-# 235,019 eligible candidates. Positive prevalence is the expected AP of a
-# random ranking, so it is the meaningful reference point for AP lift.
+# Fallback for reports generated before positive prevalence was stored. New
+# reports carry ``positive_rate`` and therefore calculate their own AP baseline.
 _RANDOM_AP_BASELINE = 890 / 235_019
 
 
@@ -78,7 +77,7 @@ def opportunity_bar_chart(
         color="section_name",
         title=title,
         labels={
-            "score": t("chart_gnn_link_score", lang),
+            "score": t("chart_opportunity_score", lang),
             "label": t("chart_product", lang),
             "section_name": t("chart_chapter", lang),
         },
@@ -149,7 +148,7 @@ def model_comparison_bars(comparison_df: pd.DataFrame, lang: str = "en") -> go.F
 def ranking_quality_chart(
     comparison_df: pd.DataFrame,
     lang: str = "en",
-    random_ap_baseline: float = _RANDOM_AP_BASELINE,
+    random_ap_baseline: float | None = None,
 ) -> go.Figure:
     """Show top-10 ranking quality and Average Precision lift over random.
 
@@ -158,6 +157,11 @@ def ranking_quality_chart(
     prevalence makes the result interpretable while retaining raw AP in the
     hover information.
     """
+    if random_ap_baseline is None:
+        rates = pd.to_numeric(
+            comparison_df.get("positive_rate", pd.Series(dtype=float)), errors="coerce"
+        ).dropna()
+        random_ap_baseline = float(rates.iloc[0]) if not rates.empty else _RANDOM_AP_BASELINE
     if random_ap_baseline <= 0:
         raise ValueError("random_ap_baseline must be positive")
 

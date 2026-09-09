@@ -91,12 +91,14 @@ def rank_product_opportunities(
         logits = model.decode(
             embeddings, torch.stack([source, destination]), "country", "product"
         )
-        scores = torch.sigmoid(logits).cpu().numpy()
+        raw_scores = logits.cpu().numpy()
+        probabilities = torch.sigmoid(logits).cpu().numpy()
 
     result = pd.DataFrame(
         {
             "hs4": [str(products[index]).zfill(4) for index in candidate_indices],
-            "gnn_score": scores.astype(float),
+            "gnn_logit": raw_scores.astype(float),
+            "gnn_score": probabilities.astype(float),
         }
     )
     result["score"] = result["gnn_score"]
@@ -106,7 +108,7 @@ def rank_product_opportunities(
         if column not in result.columns:
             result[column] = np.nan
     result["section"] = result["hs4"].str[:2]
-    result = result.sort_values("gnn_score", ascending=False).reset_index(drop=True)
+    result = result.sort_values("gnn_logit", ascending=False).reset_index(drop=True)
     result["rank"] = np.arange(1, len(result) + 1)
     return result if top_k is None else result.head(top_k).reset_index(drop=True)
 
@@ -199,6 +201,7 @@ def rank_market_opportunities(
     )
     with torch.no_grad():
         embeddings = model.encode(encode_data)
+        destination_logits: list[float] = []
         destination_scores: list[float] = []
         batch_size = 50_000
         for start in range(0, len(candidates), batch_size):
@@ -208,6 +211,7 @@ def rank_market_opportunities(
             logits = model.decode(
                 embeddings, torch.stack([source, target]), "country", "product"
             )
+            destination_logits.extend(logits.cpu().tolist())
             destination_scores.extend(torch.sigmoid(logits).cpu().tolist())
 
         product_tensor = torch.tensor(product_indices, dtype=torch.long, device=device)
@@ -215,12 +219,18 @@ def rank_market_opportunities(
         supply_logits = model.decode(
             embeddings, torch.stack([origin_tensor, product_tensor]), "country", "product"
         )
+        supply_logit_lookup = {
+            product_idx: float(logit)
+            for product_idx, logit in zip(
+                product_indices,
+                supply_logits.cpu().tolist(),
+                strict=True,
+            )
+        }
         supply_lookup = {
             product_idx: float(score)
             for product_idx, score in zip(
-                product_indices,
-                torch.sigmoid(supply_logits).cpu().tolist(),
-                strict=True,
+                product_indices, torch.sigmoid(supply_logits).cpu().tolist(), strict=True
             )
         }
 
@@ -230,7 +240,9 @@ def rank_market_opportunities(
                 "origin_iso3": country,
                 "hs4": str(products[product_idx]).zfill(4),
                 "partner_iso3": str(countries[destination_idx]),
+                "destination_gnn_logit": float(destination_logits[position]),
                 "destination_gnn_score": float(destination_scores[position]),
+                "supply_gnn_logit": supply_logit_lookup[product_idx],
                 "supply_gnn_score": supply_lookup[product_idx],
             }
             for position, (destination_idx, product_idx) in enumerate(candidates)
@@ -251,7 +263,7 @@ def rank_market_opportunities(
         return reranker.rerank(result, top_k=top_k)
 
     result["score"] = result["destination_gnn_score"]
-    result = result.sort_values("score", ascending=False).reset_index(drop=True)
+    result = result.sort_values("destination_gnn_logit", ascending=False).reset_index(drop=True)
     result["rank"] = np.arange(1, len(result) + 1)
     return result if top_k is None else result.head(top_k).reset_index(drop=True)
 
@@ -332,7 +344,7 @@ def ensemble_rankings(
         stacklevel=2,
     )
     preferred = [
-        "gnn_score", "density", "complexity_gain", "global_demand_growth",
+        "gnn_logit", "gnn_score", "density", "complexity_gain", "global_demand_growth",
         "historical_export_persistence", "adamic_adar", "jaccard", "cn",
     ]
     usable = [

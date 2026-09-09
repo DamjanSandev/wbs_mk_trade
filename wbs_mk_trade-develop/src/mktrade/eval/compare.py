@@ -29,6 +29,7 @@ def compare_models(results: dict[str, dict[str, float]]) -> pd.DataFrame:
             "map@10",
             "precision@10",
             "recall@10",
+            "map",
             "mrr",
             "roc_auc",
             "avg_precision",

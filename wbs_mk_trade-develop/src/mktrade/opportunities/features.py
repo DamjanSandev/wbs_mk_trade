@@ -115,6 +115,139 @@ def enrich_product_candidates(
         if column not in result.columns:
             result[column] = default
         result[column] = _numeric(result[column])
+    for column in (
+        "gnn_logit", "gnn_score", "density", "pci", "cog",
+        "global_demand_value", "global_demand_growth", "supply_capacity",
+    ):
+        if column in result.columns and result[column].nunique(dropna=True) > 1:
+            result[f"{column}_percentile"] = result[column].rank(
+                pct=True, method="average"
+            )
+    return result
+
+
+def enrich_product_candidate_universe(
+    candidates: pd.DataFrame,
+    exports_df: pd.DataFrame,
+    complexity_df: pd.DataFrame | None,
+    as_of_year: int,
+    *,
+    lookback_years: int = 5,
+) -> pd.DataFrame:
+    """Vectorised leakage-safe features for all country-product queries."""
+
+    required = {"iso3", "hs4"}
+    if not required.issubset(candidates.columns):
+        raise ValueError("candidates must contain iso3 and hs4")
+    result = candidates.copy()
+    result["iso3"] = result["iso3"].astype(str)
+    result["hs4"] = result["hs4"].astype(str).str.zfill(4)
+    result["section"] = result["hs4"].str[:2]
+
+    if complexity_df is not None and not complexity_df.empty:
+        complexity = complexity_df.copy()
+        if "year" in complexity.columns:
+            complexity = complexity[complexity["year"] <= as_of_year]
+            if not complexity.empty:
+                complexity = complexity[complexity["year"] == complexity["year"].max()]
+        complexity["iso3"] = complexity["iso3"].astype(str)
+        complexity["hs4"] = complexity["hs4"].astype(str).str.zfill(4)
+        columns = [
+            column
+            for column in ("iso3", "hs4", "density", "pci", "cog", "complexity_gain")
+            if column in complexity.columns
+        ]
+        result = result.merge(
+            complexity[columns].drop_duplicates(["iso3", "hs4"], keep="last"),
+            on=["iso3", "hs4"],
+            how="left",
+            suffixes=("", "_complexity"),
+        )
+
+    history = exports_df[exports_df["year"] <= as_of_year].copy()
+    value_col = "export_value" if "export_value" in history.columns else "value"
+    history[value_col] = _numeric(history[value_col])
+    history["iso3"] = history["iso3"].astype(str)
+    history["hs4"] = history["hs4"].astype(str).str.zfill(4)
+    latest_year = int(history["year"].max())
+    first_year = max(int(history["year"].min()), latest_year - lookback_years + 1)
+    recent = history[history["year"] >= first_year]
+
+    annual_world = recent.groupby(["hs4", "year"], as_index=False)[value_col].sum()
+    demand = annual_world.sort_values("year").groupby("hs4", as_index=False).agg(
+        first_value=(value_col, "first"),
+        last_value=(value_col, "last"),
+        first_year=("year", "first"),
+        last_year=("year", "last"),
+    )
+    demand["global_demand_value"] = demand["last_value"]
+    demand["global_demand_growth"] = demand.apply(
+        lambda row: _growth(
+            float(row.first_value),
+            float(row.last_value),
+            int(row.last_year - row.first_year),
+        ),
+        axis=1,
+    )
+    result = result.merge(
+        demand[["hs4", "global_demand_value", "global_demand_growth"]],
+        on="hs4",
+        how="left",
+    )
+
+    latest = history[history["year"] == latest_year]
+    country_product = latest.groupby(["iso3", "hs4"], as_index=False)[value_col].sum()
+    product_totals = country_product.groupby("hs4")[value_col].transform("sum").replace(0, np.nan)
+    country_product["share_sq"] = (country_product[value_col] / product_totals) ** 2
+    concentration = country_product.groupby("hs4", as_index=False)["share_sq"].sum().rename(
+        columns={"share_sq": "global_market_concentration"}
+    )
+    result = result.merge(concentration, on="hs4", how="left")
+
+    active = history[history[value_col] > 0]
+    active_years = active.groupby(["iso3", "hs4"], as_index=False)["year"].nunique().rename(
+        columns={"year": "historical_active_years"}
+    )
+    persistence = active.groupby(["iso3", "hs4"])["year"].apply(
+        _longest_consecutive_run
+    ).rename("historical_export_persistence").reset_index()
+    result = result.merge(active_years, on=["iso3", "hs4"], how="left")
+    result = result.merge(persistence, on=["iso3", "hs4"], how="left")
+
+    latest = latest.copy()
+    latest["section"] = latest["hs4"].str[:2]
+    supply = latest.groupby(["iso3", "section"], as_index=False)[value_col].sum().rename(
+        columns={value_col: "supply_capacity"}
+    )
+    result = result.merge(supply, on=["iso3", "section"], how="left")
+
+    feature_defaults = {
+        "density": 0.0,
+        "pci": 0.0,
+        "cog": 0.0,
+        "global_demand_value": 0.0,
+        "global_demand_growth": 0.0,
+        "global_market_concentration": 0.0,
+        "historical_active_years": 0.0,
+        "historical_export_persistence": 0.0,
+        "supply_capacity": 0.0,
+    }
+    for column, default in feature_defaults.items():
+        if column not in result.columns:
+            result[column] = default
+        result[column] = _numeric(result[column])
+
+    # Query-relative ranks make scores comparable across countries and remove
+    # much of the scale sensitivity of raw economic variables.
+    rank_columns = [
+        "gnn_logit", "gnn_score", "density", "pci", "cog",
+        "global_demand_value", "global_demand_growth", "supply_capacity",
+    ]
+    for column in rank_columns:
+        if column in result.columns and result[column].nunique(dropna=True) > 1:
+            result[f"{column}_percentile"] = result.groupby("iso3")[column].rank(
+                pct=True, method="average"
+            )
     return result
 
 

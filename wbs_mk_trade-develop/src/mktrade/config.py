@@ -83,14 +83,22 @@ class TrainConfig(BaseSettings):
     weight_decay: float = 0.0001
     batch_size: int = 1024
     split_strategy: str = "temporal"
-    train_end_year: int = 2019
-    val_year: int = 2020
+    train_end_year: int = 2018
+    val_year: int = 2019
     test_years: list[int] = Field(default_factory=lambda: [2021, 2022])
     min_export_value: float = 100_000.0
     min_rca: float = 1.0
     min_consecutive_years: int = 2
     eval_all_candidates: bool = True
-    selection_metric: str = "ndcg@10"
+    selection_metric: str = "ranking_composite"
+    transition_target: bool = True
+    train_neg_ratio: int = 10
+    hard_negative_fraction: float = 0.7
+    ranking_loss_weight: float = 0.5
+    ranking_hard_negatives: int = 20
+    reranker_model: str = "pairwise"
+    reranker_calibrate: bool = False
+    reranker_max_pairs_per_query: int = 200
     reranker_bootstraps: int = 20
     rolling_cutoffs: list[int] = Field(default_factory=lambda: [2016, 2017, 2018, 2019])
     evaluation_seeds: list[int] = Field(default_factory=lambda: [13, 42, 73])
@@ -138,6 +146,7 @@ def load_train_config() -> TrainConfig:
     temporal = split.get("temporal", {})
     target = raw.get("success_target", {})
     evaluation = raw.get("evaluation", {})
+    ranking_training = raw.get("ranking_training", {})
     reranker = raw.get("reranker", {})
     return TrainConfig(
         seed=raw.get("seed", 42),
@@ -149,14 +158,22 @@ def load_train_config() -> TrainConfig:
         weight_decay=raw.get("optimizer", {}).get("weight_decay", 0.0001),
         batch_size=raw.get("loader", {}).get("batch_size", 1024),
         split_strategy=split.get("strategy", "temporal"),
-        train_end_year=temporal.get("train_end_year", 2019),
-        val_year=temporal.get("val_year", 2020),
+        train_end_year=temporal.get("train_end_year", 2018),
+        val_year=temporal.get("val_year", 2019),
         test_years=temporal.get("test_years", [2021, 2022]),
         min_export_value=target.get("min_export_value", 100_000.0),
         min_rca=target.get("min_rca", 1.0),
         min_consecutive_years=target.get("min_consecutive_years", 2),
         eval_all_candidates=evaluation.get("all_candidates", True),
-        selection_metric=evaluation.get("selection_metric", "ndcg@10"),
+        selection_metric=evaluation.get("selection_metric", "ranking_composite"),
+        transition_target=ranking_training.get("transition_target", True),
+        train_neg_ratio=ranking_training.get("negatives_per_positive", 10),
+        hard_negative_fraction=ranking_training.get("hard_negative_fraction", 0.7),
+        ranking_loss_weight=ranking_training.get("ranking_loss_weight", 0.5),
+        ranking_hard_negatives=ranking_training.get("ranking_hard_negatives", 20),
+        reranker_model=reranker.get("model", "pairwise"),
+        reranker_calibrate=reranker.get("calibrate", False),
+        reranker_max_pairs_per_query=reranker.get("max_pairs_per_query", 200),
         reranker_bootstraps=reranker.get("bootstrap_runs", 20),
         rolling_cutoffs=evaluation.get("rolling_cutoffs", [2016, 2017, 2018, 2019]),
         evaluation_seeds=evaluation.get("seeds", [13, 42, 73]),

@@ -23,3 +23,7 @@ def test_load_train_config() -> None:
     assert cfg.seed == 42
     assert cfg.split_strategy in ("temporal", "random")
     assert cfg.train_end_year < cfg.val_year
+    assert cfg.transition_target is True
+    assert cfg.train_neg_ratio > 1
+    assert 0 < cfg.ranking_loss_weight <= 1
+    assert cfg.reranker_model == "pairwise"

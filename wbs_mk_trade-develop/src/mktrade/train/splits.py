@@ -20,6 +20,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import numpy as np
+import pandas as pd
 import torch
 from loguru import logger
 from torch_geometric.transforms import RandomLinkSplit
@@ -32,7 +33,6 @@ from mktrade.opportunities.targets import (
 )
 
 if TYPE_CHECKING:
-    import pandas as pd
     from torch_geometric.data import HeteroData
 
     from mktrade.config import TrainConfig
@@ -96,7 +96,7 @@ def temporal_split(
     bilateral_df: pd.DataFrame | None = None,
     wdi_df: pd.DataFrame | None = None,
     cefta_members: set[str] | None = None,
-    neg_ratio: int = 1,
+    neg_ratio: int | None = None,
     proximity_top_k: int | None = None,
 ) -> tuple[HeteroData, HeteroData, HeteroData]:
     """Temporal link-split for Task A (product diversification).
@@ -116,28 +116,52 @@ def temporal_split(
 
     logger.info(f"Temporal split: train<=  {train_end}, val={val_year}, test={test_years}")
 
-    # Build the training graph (all years up to train_end)
-    train_years = list(range(exports_df["year"].min(), train_end + 1))
     success_criteria = criteria_from_config(cfg)
-    train_data = _build_snapshot_data(
+    first_year = int(exports_df["year"].min())
+
+    # Validation and test candidates are scored from the graph available at
+    # the declared cutoff. Training supervision uses an earlier graph and
+    # labels only links that form afterwards, matching the deployment task.
+    inference_years = list(range(first_year, train_end + 1))
+    inference_data = _build_snapshot_data(
         exports_df, country_features, product_features,
         proximity_df, gravity_df, bilateral_df, wdi_df,
-        years=train_years, cefta_members=cefta_members,
+        years=inference_years, cefta_members=cefta_members,
         proximity_top_k=proximity_top_k,
         success_criteria=success_criteria,
     )
 
+    if cfg.transition_target:
+        training_cutoff = train_end - success_criteria.min_consecutive_years
+        if training_cutoff < first_year:
+            raise ValueError("Not enough history to build transition-based training labels")
+        train_years = list(range(first_year, training_cutoff + 1))
+        train_outcome_years = list(range(training_cutoff + 1, train_end + 1))
+        train_data = _build_snapshot_data(
+            exports_df, country_features, product_features,
+            proximity_df, gravity_df, bilateral_df, wdi_df,
+            years=train_years, cefta_members=cefta_members,
+            proximity_top_k=proximity_top_k,
+            success_criteria=success_criteria,
+        )
+    else:
+        training_cutoff = train_end
+        train_outcome_years = []
+        train_data = inference_data.clone()
+
     # Get ID mappings from the training graph
-    countries = train_data["country"].iso3
-    products = train_data["product"].hs4
+    countries = inference_data["country"].iso3
+    products = inference_data["product"].hs4
     country2idx = {c: i for i, c in enumerate(countries)}
     product2idx = {p: i for i, p in enumerate(products)}
 
+    if train_data["country"].iso3 != countries or train_data["product"].hs4 != products:
+        raise ValueError("Training and inference snapshots produced incompatible node mappings")
+
     # Existing train edges as a set for fast lookup
-    train_edges = set()
+    train_edges = _edge_set(train_data)
+    inference_edges = _edge_set(inference_data)
     ei = train_data["country", "exports", "product"].edge_index
-    for i in range(ei.shape[1]):
-        train_edges.add((ei[0, i].item(), ei[1, i].item()))
 
     # All possible edges for negative sampling
     n_countries = len(countries)
@@ -150,7 +174,7 @@ def temporal_split(
     )
     val_data = _make_eval_split(
         exports_df, val_years, country2idx, product2idx,
-        train_edges, n_countries, n_products, neg_ratio,
+        inference_edges, n_countries, n_products, neg_ratio or cfg.train_neg_ratio,
         split_name="val",
         success_criteria=success_criteria,
         all_candidates=cfg.eval_all_candidates,
@@ -166,7 +190,7 @@ def temporal_split(
     }
     test_data = _make_eval_split(
         exports_df, test_years, country2idx, product2idx,
-        train_edges, n_countries, n_products, neg_ratio,
+        inference_edges, n_countries, n_products, neg_ratio or cfg.train_neg_ratio,
         split_name="test",
         success_criteria=success_criteria,
         excluded_edges=val_positive_edges,
@@ -176,23 +200,53 @@ def temporal_split(
 
     # Attach label data to copies of train_data (for message passing graph)
     # Val and test use the TRAIN graph for message passing
-    val_data_out = train_data.clone()
+    val_data_out = inference_data.clone()
     val_data_out["country", "exports", "product"].edge_label_index = val_data["edge_label_index"]
     val_data_out["country", "exports", "product"].edge_label = val_data["edge_label"]
 
-    test_data_out = train_data.clone()
+    test_data_out = inference_data.clone()
     test_data_out["country", "exports", "product"].edge_label_index = test_data["edge_label_index"]
     test_data_out["country", "exports", "product"].edge_label = test_data["edge_label"]
 
-    # Training supervision: use existing edges as positives + negatives
+    # Training supervision: future transitions are positives. This avoids
+    # teaching the model merely to reconstruct links already visible in the
+    # message-passing graph.
+    if cfg.transition_target:
+        transition_links = sustained_link_set(
+            exports_df, success_criteria, train_outcome_years
+        )
+        training_positives = {
+            (country2idx[country], product2idx[product])
+            for country, product in transition_links
+            if country in country2idx
+            and product in product2idx
+            and (country2idx[country], product2idx[product]) not in train_edges
+        }
+    else:
+        training_positives = train_edges
+
+    hard_scores = _candidate_hard_scores(
+        exports_df,
+        training_cutoff,
+        country2idx,
+        product2idx,
+        train_edges,
+    )
     train_label_data = _make_train_labels(
-        train_edges, n_countries, n_products, neg_ratio, random_seed=cfg.seed
+        training_positives,
+        n_countries,
+        n_products,
+        neg_ratio or cfg.train_neg_ratio,
+        excluded_edges=train_edges,
+        hard_negative_scores=hard_scores,
+        hard_negative_fraction=cfg.hard_negative_fraction,
+        random_seed=cfg.seed,
     )
     train_data["country", "exports", "product"].edge_label_index = train_label_data["edge_label_index"]
     train_data["country", "exports", "product"].edge_label = train_label_data["edge_label"]
 
     logger.info(
-        f"  Train: {ei.shape[1]} message edges, "
+        f"  Train: {ei.shape[1]} message edges through {training_cutoff}, "
         f"{int(train_label_data['edge_label'].sum())} pos / "
         f"{int((train_label_data['edge_label'] == 0).sum())} neg supervision"
     )
@@ -206,6 +260,42 @@ def temporal_split(
     )
 
     return train_data, val_data_out, test_data_out
+
+
+def _edge_set(data: HeteroData) -> set[tuple[int, int]]:
+    edge_index = data["country", "exports", "product"].edge_index
+    return {tuple(edge) for edge in edge_index.t().tolist()}
+
+
+def _candidate_hard_scores(
+    exports_df: pd.DataFrame,
+    cutoff: int,
+    country2idx: dict[str, int],
+    product2idx: dict[str, int],
+    existing_edges: set[tuple[int, int]],
+) -> dict[tuple[int, int], float]:
+    """Return leakage-safe density/popularity scores for negative mining."""
+
+    scores: dict[tuple[int, int], float] = {}
+    if "density" in exports_df.columns:
+        frame = exports_df[exports_df["year"] <= cutoff].copy()
+        if not frame.empty:
+            frame = frame[frame["year"] == frame["year"].max()]
+            frame["density"] = pd.to_numeric(frame["density"], errors="coerce")
+            for row in frame[["iso3", "hs4", "density"]].dropna().itertuples(index=False):
+                country = str(row.iso3)
+                product = str(row.hs4).zfill(4)
+                if country in country2idx and product in product2idx:
+                    scores[(country2idx[country], product2idx[product])] = float(row.density)
+
+    # Product ubiquity is a useful fallback when Atlas density is unavailable.
+    product_counts: dict[int, int] = {}
+    for _, product_idx in existing_edges:
+        product_counts[product_idx] = product_counts.get(product_idx, 0) + 1
+    for country_idx in range(len(country2idx)):
+        for product_idx, count in product_counts.items():
+            scores.setdefault((country_idx, product_idx), float(count))
+    return scores
 
 
 def _make_eval_split(
@@ -301,28 +391,52 @@ def _make_eval_split(
 
 
 def _make_train_labels(
-    train_edges: set[tuple[int, int]],
+    positive_edges: set[tuple[int, int]],
     n_countries: int,
     n_products: int,
     neg_ratio: int,
+    excluded_edges: set[tuple[int, int]] | None = None,
+    hard_negative_scores: dict[tuple[int, int], float] | None = None,
+    hard_negative_fraction: float = 0.7,
     random_seed: int = 42,
 ) -> dict[str, torch.Tensor]:
-    """Build supervision labels for training (pos edges + negative samples)."""
-    pos_list = list(train_edges)
-    n_neg = len(pos_list) * neg_ratio
+    """Build per-country transition labels with a hard/random negative mix."""
+    if not positive_edges:
+        raise ValueError("Transition training produced no positive links")
+    if neg_ratio < 1:
+        raise ValueError("neg_ratio must be at least one")
 
+    excluded = set(excluded_edges or set()) | set(positive_edges)
+    hard_scores = hard_negative_scores or {}
     rng = np.random.RandomState(random_seed)
-    neg_edges = []
-    all_pos = set(train_edges)
-    attempts = 0
-    while len(neg_edges) < n_neg and attempts < n_neg * 20:
-        c = rng.randint(0, n_countries)
-        p = rng.randint(0, n_products)
-        if (c, p) not in all_pos:
-            neg_edges.append((c, p))
-            all_pos.add((c, p))
-        attempts += 1
+    pos_by_country: dict[int, list[tuple[int, int]]] = {}
+    for edge in sorted(positive_edges):
+        pos_by_country.setdefault(edge[0], []).append(edge)
 
+    neg_edges: list[tuple[int, int]] = []
+    hard_fraction = float(np.clip(hard_negative_fraction, 0.0, 1.0))
+    for country_idx, country_positives in pos_by_country.items():
+        candidates = [
+            (country_idx, product_idx)
+            for product_idx in range(n_products)
+            if (country_idx, product_idx) not in excluded
+        ]
+        required = min(len(candidates), len(country_positives) * neg_ratio)
+        n_hard = min(required, int(round(required * hard_fraction)))
+        ordered = sorted(
+            candidates,
+            key=lambda edge: hard_scores.get(edge, float("-inf")),
+            reverse=True,
+        )
+        selected = ordered[:n_hard]
+        remaining = ordered[n_hard:]
+        n_random = required - len(selected)
+        if n_random and remaining:
+            indices = rng.choice(len(remaining), size=n_random, replace=False)
+            selected.extend(remaining[index] for index in indices)
+        neg_edges.extend(selected)
+
+    pos_list = sorted(positive_edges)
     all_edges = pos_list + neg_edges
     labels = [1.0] * len(pos_list) + [0.0] * len(neg_edges)
 

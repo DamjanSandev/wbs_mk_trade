@@ -27,8 +27,8 @@ from mktrade.config import PROJECT_ROOT, load_data_config, load_train_config
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Generate MKD opportunity report")
-    parser.add_argument("--model", type=str, default="gat",
-                        help="Model to use (default: gat, the best performer)")
+    parser.add_argument("--model", type=str, default="auto",
+                        help="Model to use (default: choose the best validation checkpoint)")
     parser.add_argument("--top-k", type=int, default=100,
                         help="Number of top opportunities to report")
     parser.add_argument("--explain-top-n", type=int, default=15,
@@ -40,10 +40,34 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _select_model(requested: str) -> str:
+    """Choose the strongest available GNN by validation ranking quality."""
+
+    if requested.lower() != "auto":
+        return requested.lower()
+    model_names = ["graphsage", "gat", "gcn", "hgt"]
+    candidates = []
+    for model_name in model_names:
+        checkpoint_path = PROJECT_ROOT / "models" / f"{model_name}_best.pt"
+        if not checkpoint_path.exists():
+            continue
+        checkpoint = torch.load(checkpoint_path, weights_only=False, map_location="cpu")
+        candidates.append(
+            (
+                float(checkpoint.get("selection_score", checkpoint.get("val_ap", 0.0))),
+                model_name,
+            )
+        )
+    if not candidates:
+        raise FileNotFoundError("No trained GNN checkpoints found; run Phase 4 first")
+    return max(candidates)[1]
+
+
 def main() -> None:
     args = parse_args()
     data_cfg = load_data_config()
     train_cfg = load_train_config()
+    args.model = _select_model(args.model)
     reports_dir = PROJECT_ROOT / "reports"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
@@ -102,6 +126,7 @@ def main() -> None:
         atlas_df, country_complexity, product_complexity,
         proximity_df, gravity_df, bilateral_df, wdi_df,
         years=train_years, cefta_members=set(data_cfg.cefta_members),
+        proximity_top_k=50 if args.model == "hgt" else None,
         success_criteria=criteria_from_config(train_cfg),
     )
 
@@ -179,11 +204,43 @@ def main() -> None:
     task_a_reranker = None
     if not args.skip_ensemble:
         try:
-            task_a_reranker = OpportunityReranker(
-                random_state=train_cfg.seed,
-                n_bootstrap=train_cfg.reranker_bootstraps,
-            ).fit(task_a_validation)
-            task_a_reranker.save(PROJECT_ROOT / "models" / "task_a_reranker.pkl")
+            reranker_path = PROJECT_ROOT / "models" / "task_a_reranker.pkl"
+            if reranker_path.exists():
+                candidate_reranker = OpportunityReranker.load(reranker_path)
+                if (
+                    candidate_reranker.training_queries > 1
+                    and candidate_reranker.has_probability_calibration
+                ):
+                    task_a_reranker = candidate_reranker
+                elif not candidate_reranker.has_probability_calibration:
+                    logger.warning(
+                        "Saved Task A pairwise reranker predates probability calibration; "
+                        "refitting it for this report"
+                    )
+            if task_a_reranker is None:
+                cached_validation_path = (
+                    reports_dir / "task_a_reranker_validation_all_countries.csv"
+                )
+                if cached_validation_path.exists():
+                    logger.info(
+                        "Refitting the Task A reranker from cached all-country "
+                        "validation candidates"
+                    )
+                    reranker_validation = pd.read_csv(cached_validation_path)
+                else:
+                    logger.warning(
+                        "No all-country validation candidates found; fitting the "
+                        "smaller MKD validation fallback"
+                    )
+                    reranker_validation = task_a_validation
+                task_a_reranker = OpportunityReranker(
+                    random_state=train_cfg.seed,
+                    n_bootstrap=train_cfg.reranker_bootstraps,
+                    calibrate=train_cfg.reranker_calibrate,
+                    model_type=train_cfg.reranker_model,
+                    max_pairs_per_query=train_cfg.reranker_max_pairs_per_query,
+                ).fit(reranker_validation)
+                task_a_reranker.save(reranker_path)
             task_a_df = ensemble_rankings(
                 task_a_candidates,
                 reranker=task_a_reranker,
@@ -195,7 +252,7 @@ def main() -> None:
             )
             task_a_df = ensemble_rankings(task_a_candidates, top_k=args.top_k)
     else:
-        task_a_df = task_a_candidates.sort_values("gnn_score", ascending=False).head(args.top_k)
+        task_a_df = task_a_candidates.sort_values("gnn_logit", ascending=False).head(args.top_k)
         task_a_df = task_a_df.reset_index(drop=True)
         task_a_df["score"] = task_a_df["gnn_score"]
         task_a_df["rank"] = range(1, len(task_a_df) + 1)
@@ -259,6 +316,9 @@ def main() -> None:
             task_b_reranker = OpportunityReranker(
                 random_state=train_cfg.seed,
                 n_bootstrap=train_cfg.reranker_bootstraps,
+                calibrate=train_cfg.reranker_calibrate,
+                model_type=train_cfg.reranker_model,
+                max_pairs_per_query=train_cfg.reranker_max_pairs_per_query,
             ).fit(task_b_validation)
             task_b_reranker.save(PROJECT_ROOT / "models" / "task_b_reranker.pkl")
             task_b_df = task_b_reranker.rerank(task_b_candidates, top_k=args.top_k)
@@ -267,7 +327,7 @@ def main() -> None:
                 f"Could not fit Task B reranker ({error}); using destination GNN score"
             )
             task_b_df = task_b_candidates.sort_values(
-                "destination_gnn_score", ascending=False
+                "destination_gnn_logit", ascending=False
             ).head(args.top_k).copy()
             task_b_df = task_b_df.reset_index(drop=True)
             task_b_df["score"] = task_b_df["destination_gnn_score"]

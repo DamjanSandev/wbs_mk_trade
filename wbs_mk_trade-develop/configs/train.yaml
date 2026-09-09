@@ -7,8 +7,10 @@ split:
   strategy: "temporal"                 # temporal | random
   # Temporal: train on years <= cutoff, validate on cutoff+1, test on cutoff+2..+k
   temporal:
-    train_end_year: 2019
-    val_year: 2020
+    # The two-year validation outcome (2019-2020) must not overlap the
+    # two-year held-out outcome (2021-2022).
+    train_end_year: 2018
+    val_year: 2019
     test_years: [2021, 2022]
   # Random: standard link-split ratios
   random:
@@ -29,14 +31,24 @@ success_target:
 # Rank the real candidate universe per country and optimise top-K quality.
 evaluation:
   all_candidates: true
-  selection_metric: "ndcg@10"
+  selection_metric: "ranking_composite"
   rolling_cutoffs: [2016, 2017, 2018, 2019]
   seeds: [13, 42, 73]
 
+# Train on future link formation and difficult alternatives, not a balanced
+# sample of already-existing links versus easy random non-links.
+ranking_training:
+  transition_target: true
+  negatives_per_positive: 10
+  hard_negative_fraction: 0.7
+  ranking_loss_weight: 0.5
+  ranking_hard_negatives: 20
+
 reranker:
-  model: "logistic"
-  calibrate: true
+  model: "pairwise"
+  calibrate: false
   bootstrap_runs: 20
+  max_pairs_per_query: 200
 
 # ── Dataloader ────────────────────────────────────────────
 loader:

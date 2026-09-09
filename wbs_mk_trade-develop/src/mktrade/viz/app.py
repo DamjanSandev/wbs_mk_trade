@@ -575,12 +575,17 @@ def page_task_a(lang):
     fig_pie.update_layout(height=380, margin=dict(t=30))
 
     # Detail table
-    display_df = filtered[["product", "score", "density", "pci", "chapter"]].copy()
+    display_df = filtered[
+        ["product", "score", "gnn_score", "density", "pci", "chapter"]
+    ].copy()
     display_df.columns = [
-        t("col_product", lang), t("col_gnn_score", lang),
+        t("col_product", lang), t("col_final_score", lang), t("col_gnn_score", lang),
         t("col_density", lang), t("col_pci", lang), t("col_chapter", lang),
     ]
-    for c in [t("col_gnn_score", lang), t("col_density", lang), t("col_pci", lang)]:
+    for c in [
+        t("col_final_score", lang), t("col_gnn_score", lang),
+        t("col_density", lang), t("col_pci", lang),
+    ]:
         if c in display_df.columns:
             display_df[c] = display_df[c].apply(lambda x: f"{x:.4f}" if pd.notna(x) else "")
 
@@ -593,7 +598,7 @@ def page_task_a(lang):
             "product": t("col_product", lang),
             "ensemble_score": t("col_ensemble_score", lang),
             "gnn_score": t("col_gnn_score_short", lang),
-            "density_score": t("col_density_score", lang),
+            "density": t("col_density", lang),
             "classical_score": t("col_classical_score", lang),
         }
         show_cols = [c for c in ens_col_map if c in ens.columns]

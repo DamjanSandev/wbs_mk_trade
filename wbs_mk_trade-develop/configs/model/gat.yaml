@@ -9,6 +9,9 @@ encoder:
   heterogeneous: true
 
 decoder:
-  name: "dot_product"
+  # The previous dot product produced many saturated sigmoid scores near 1.0,
+  # which destroyed useful ordering among top candidates.
+  name: "mlp"
+  mlp_hidden: 64
 
 variational: false

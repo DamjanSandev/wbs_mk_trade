@@ -292,12 +292,18 @@ def build_hetero_data(
             if year is not None and year in prox["year"].values:
                 prox = prox[prox["year"] == year]
             else:
-                # Proximity is a structural property that changes slowly;
-                # fall back to the latest available year (same logic as gravity)
-                latest = prox["year"].max()
-                prox = prox[prox["year"] == latest]
-                if year is not None:
-                    logger.info(f"  Proximity: year {year} unavailable, using {latest}")
+                eligible = prox if year is None else prox[prox["year"] <= year]
+                if eligible.empty:
+                    logger.warning(
+                        f"  Proximity: no leakage-safe matrix is available at or before {year}; "
+                        "skipping proximity edges"
+                    )
+                    prox = eligible
+                else:
+                    latest = eligible["year"].max()
+                    prox = eligible[eligible["year"] == latest]
+                    if year is not None:
+                        logger.info(f"  Proximity: year {year} unavailable, using prior year {latest}")
         prox = prox[(prox["proximity"] > 0) & (prox["hs4_1"] != prox["hs4_2"])]
 
         prox["i"] = prox["hs4_1"].map(product2idx)
